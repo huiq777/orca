@@ -76,19 +76,23 @@ monacoTS.javascriptDefaults.setCompilerOptions({
   jsx: monacoTS.JsxEmit.Preserve
 })
 
-registerVueLanguage(monaco)
-registerSvelteLanguage(monaco)
-registerAstroLanguage(monaco)
-registerNimLanguage(monaco)
-registerJsonlLanguage(monaco)
-registerShellMarkdownAliases(monaco)
-installMonacoDelayerCancellationGuard()
-installMonacoDiffEditorDisposalGuard(monaco)
-installMonacoPeekReferencesPreviewOptions()
-// Why: Monaco's built-in context-menu Paste reads navigator.clipboard, which is
-// blocked in Orca's sandboxed renderer. Route it through the trusted IPC bridge
-// so right-click Paste works like Cmd+V (which already works via native events).
-installMonacoContextMenuPaste(monaco)
+try {
+  registerVueLanguage(monaco)
+  registerSvelteLanguage(monaco)
+  registerAstroLanguage(monaco)
+  registerNimLanguage(monaco)
+  registerJsonlLanguage(monaco)
+  registerShellMarkdownAliases(monaco)
+  installMonacoDelayerCancellationGuard()
+  installMonacoDiffEditorDisposalGuard(monaco)
+  installMonacoPeekReferencesPreviewOptions()
+  // Why: Monaco's built-in context-menu Paste reads navigator.clipboard, which is
+  // blocked in Orca's sandboxed renderer. Route it through the trusted IPC bridge
+  // so right-click Paste works like Cmd+V (which already works via native events).
+  installMonacoContextMenuPaste(monaco)
+} catch (error) {
+  console.error('[Monaco Setup] Language/feature registration failed', error)
+}
 
 // Configure Monaco to use the locally bundled editor instead of CDN
 loader.config({ monaco })
