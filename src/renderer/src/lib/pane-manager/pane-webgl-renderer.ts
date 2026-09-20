@@ -183,13 +183,24 @@ export function clearWebglTextureAtlas(pane: ManagedPaneInternal): void {
   if (pane.webglDisabledAfterContextLoss) {
     return
   }
+  if (!pane.webglAddon) {
+    return
+  }
+  // Defensive: detect lost context before attempting clear. Signal-level crashes
+  // (SIGSEGV) from WebGL ops on lost contexts can't be caught as exceptions; check
+  // context state first to avoid GPU driver crashes on rapid TUI redraws.
+  if (isPaneWebglContextLost(pane)) {
+    pane.webglDisabledAfterContextLoss = true
+    return
+  }
   try {
     // Why: rapid TUI redraws can corrupt xterm's WebGL glyph atlas without a
     // context-loss event. Clearing the atlas preserves GPU rendering and forces
     // a fresh paint when the pane becomes visible/focused again.
-    pane.webglAddon?.clearTextureAtlas()
+    pane.webglAddon.clearTextureAtlas()
   } catch {
     /* ignore — pane may have been disposed in the meantime */
+    pane.webglDisabledAfterContextLoss = true
   }
 }
 
