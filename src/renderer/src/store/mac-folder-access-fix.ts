@@ -38,7 +38,10 @@ type MacFolderAccessFixState = {
   noticePhaseByScope: ReadonlyMap<string, FolderAccessNoticePhase>
   openFix: () => void
   close: () => void
-  /** Every verdict main produces — a poll or a reset's forced re-probe — lands here unconditionally. */
+  /**
+   * Every verdict main produces — a poll or a reset's forced re-probe — lands here unconditionally,
+   * and a null one retires the notice as well, so no caller has to remember to.
+   */
   applyVerdict: (mismatch: PtyManagementFolderAccessMismatch | null) => void
   showNotice: (daemonScope: string) => void
   retireNotice: (daemonScope: string) => void
@@ -51,9 +54,21 @@ export const useMacFolderAccessFixStore = create<MacFolderAccessFixState>()((set
   noticePhaseByScope: new Map<string, FolderAccessNoticePhase>(),
   openFix: () => set((state) => ({ openScope: state.mismatch?.daemonScope ?? null })),
   close: () => set({ openScope: null }),
-  // No evidence, nothing open: a later verdict for the same scope must start its remedy afresh.
-  applyVerdict: (mismatch) =>
-    set((state) => ({ mismatch, openScope: mismatch ? state.openScope : null })),
+  applyVerdict: (mismatch) => {
+    // The open remedy belongs to one scope; any other verdict ends it.
+    set((state) => ({
+      mismatch,
+      openScope: mismatch && mismatch.daemonScope === state.openScope ? state.openScope : null
+    }))
+    if (mismatch) {
+      return
+    }
+    // No evidence left, so the toast goes too — whether a poll or a reset is what found that out.
+    const visible = visibleNoticeScope(get().noticePhaseByScope)
+    if (visible) {
+      get().retireNotice(visible)
+    }
+  },
   showNotice: (daemonScope) =>
     set((state) => {
       const next = new Map(state.noticePhaseByScope)

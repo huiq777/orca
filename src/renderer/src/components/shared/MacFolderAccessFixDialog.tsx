@@ -377,7 +377,7 @@ function FolderAccessFix({
 export function MacFolderAccessFixDialog(): React.JSX.Element | null {
   const mismatch = useMacFolderAccessFixStore((s) => s.mismatch)
   const openScope = useMacFolderAccessFixStore((s) => s.openScope)
-  if (!mismatch || openScope !== mismatch.daemonScope) {
+  if (!mismatch || !openScope) {
     return null
   }
   return <FolderAccessFix mismatch={mismatch} />

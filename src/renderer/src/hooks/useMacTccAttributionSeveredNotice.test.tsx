@@ -431,7 +431,8 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(SCOPE_B)
     })
 
-    expect(useMacFolderAccessFixStore.getState().openScope).toBe(SCOPE_A.daemonScope)
+    // Ended, not parked: the scope coming back later must not pop the dialog on its own.
+    expect(useMacFolderAccessFixStore.getState().openScope).toBeNull()
   })
 
   // The toast outlives the poll that raised it, and a restart offered against a stale `unknown`

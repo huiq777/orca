@@ -15,8 +15,7 @@ import { MANAGE_SESSIONS_SECTION_ID } from '@/components/settings/TerminalTccAtt
 import { macFolderAccessFolderName } from '@/components/shared/mac-folder-access-folder-name'
 import {
   FOLDER_ACCESS_MISMATCH_NOTICE_ID,
-  useMacFolderAccessFixStore,
-  visibleNoticeScope
+  useMacFolderAccessFixStore
 } from '@/store/mac-folder-access-fix'
 
 const SEVERED_TCC_NOTICE_ID = 'mac-tcc-attribution-severed'
@@ -106,18 +105,13 @@ export function useMacTccAttributionSeveredNotice(): void {
     }
 
     const applyFolderAccessNotice = (mismatch: PtyManagementFolderAccessMismatch | null): void => {
-      const { noticePhaseByScope, applyVerdict, retireNotice, showNotice, openFix } =
+      const { noticePhaseByScope, applyVerdict, showNotice, openFix } =
         useMacFolderAccessFixStore.getState()
       // Why unconditionally: this is the evidence the dialog renders, and an open one completes
-      // its first step only when a later poll says the grant landed.
+      // its first step only when a later poll says the grant landed. A null verdict retires the
+      // notice from in there, so the same daemon can raise it again after a reconnect blip.
       applyVerdict(mismatch)
       if (!mismatch) {
-        // Why retire rather than latch: main reads a null daemon identity during any reconnect
-        // blip and reports it as "no mismatch", and the same daemon must be able to show again.
-        const visible = visibleNoticeScope(noticePhaseByScope)
-        if (visible) {
-          retireNotice(visible)
-        }
         return
       }
       const { daemonScope, cwdClass } = mismatch

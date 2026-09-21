@@ -4,13 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const { trackTelemetry, restart, openSettings, resetFolderAccess } = vi.hoisted(() => ({
-  trackTelemetry: vi.fn(),
-  restart: vi.fn(async () => ({ success: true })),
-  openSettings: vi.fn(async () => {}),
-  resetFolderAccess: vi.fn()
-}))
+const { trackTelemetry, restart, openSettings, resetFolderAccess, dismissToast } = vi.hoisted(
+  () => ({
+    trackTelemetry: vi.fn(),
+    restart: vi.fn(async () => ({ success: true })),
+    openSettings: vi.fn(async () => {}),
+    resetFolderAccess: vi.fn(),
+    dismissToast: vi.fn()
+  })
+)
 
+vi.mock('sonner', () => ({ toast: { dismiss: dismissToast } }))
 vi.mock('@/lib/telemetry', () => ({ track: trackTelemetry }))
 vi.mock('@/i18n/i18n', () => ({
   translate: (_key: string, fallback: string, options?: Record<string, string>) =>
@@ -84,6 +88,7 @@ beforeEach(() => {
   restart.mockReset().mockResolvedValue({ success: true })
   openSettings.mockReset().mockResolvedValue(undefined)
   resetFolderAccess.mockReset()
+  dismissToast.mockReset()
   probed('denied')
   useMacFolderAccessFixStore.setState({
     mismatch: null,
@@ -330,6 +335,9 @@ describe('MacFolderAccessFixDialog', () => {
       expect(dialogShown()).toBe(false)
     })
     expect(useMacFolderAccessFixStore.getState().mismatch).toBeNull()
+    // The toast outlives the dialog unless something retires it, and only the store can.
+    expect(noticePhase()).toBe('retired')
+    expect(dismissToast).toHaveBeenCalledWith('mac-daemon-folder-access-mismatch')
   })
 
   // The footer flips to the restart branch the moment the grant lands, which can happen while the
@@ -370,6 +378,18 @@ describe('MacFolderAccessFixDialog', () => {
 
     expect(screen.queryByText(failure)).toBeNull()
     expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(1)
+  })
+
+  // Closing is the end of the remedy, so the scope returning later must not pop the dialog again.
+  it('does not reopen itself when the original scope comes back', () => {
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+
+    verdict('denied', 'bbbb444455556666')
+    verdict('denied')
+
+    expect(useMacFolderAccessFixStore.getState().openScope).toBeNull()
+    expect(dialogShown()).toBe(false)
   })
 
   // The remedy belongs to one folder on one daemon, so evidence that moves is a different remedy.
