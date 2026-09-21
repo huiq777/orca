@@ -5,6 +5,11 @@ import { mobileWebAppRouteClosure } from './build-mobile-web-app-bundle.mjs'
 import { mobileWebAppDependenciesPresent } from './mobile-web-app-bundle-dependencies.mjs'
 import { mobileWebAppRouteChunkClosure } from './mobile-web-app-route-chunk-closure.mjs'
 import {
+  editableHostFontSizeOffenders,
+  editableHostsIn,
+  unresolvedEditableHostStyles
+} from './mobile-web-app-editable-host-font-size.mjs'
+import {
   textInputFontSizeOffenders,
   unresolvedTextInputStyles
 } from './mobile-web-app-text-input-font-size-seam.mjs'
@@ -302,6 +307,19 @@ describeClosure(
       expect(closure.local).toContain('src/platform/text-input-font-size.web.ts')
       expect(unresolvedTextInputStyles(mobileDir, closure)).toEqual([])
       expect(textInputFontSizeOffenders(mobileDir, closure)).toHaveLength(EXPECTED_OFFENDERS)
+    }, 300_000)
+
+    it('holds the editables the TextInput census cannot see to the same floor', async () => {
+      const closure = await mobileWebAppRouteClosure(SESSION_ROUTE)
+      // The rich Markdown editor's surface is a `contenteditable` in a markup string, sized by a
+      // rule in a stylesheet: `modulesDeclaringTextInput` matches JSX tags and never sees it, so it
+      // shipped at 14 px and was measured at 14 px in both engines. The same floor, read by a rule
+      // that starts from the markup instead of from a prop.
+      expect(editableHostsIn(mobileDir, closure)).toEqual([
+        { file: 'src/components/rich-markdown/document-markup.ts', id: 'editor' }
+      ])
+      expect(unresolvedEditableHostStyles(mobileDir, closure)).toEqual([])
+      expect(editableHostFontSizeOffenders(mobileDir, closure)).toEqual([])
     }, 300_000)
   },
   900_000
