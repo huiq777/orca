@@ -44,12 +44,37 @@ function Step({
   )
 }
 
+function allowStepHelper(
+  mismatch: PtyManagementFolderAccessMismatch,
+  folder: string
+): string | undefined {
+  // Why the off-and-on line: users who reach this step usually see the toggle already on. The
+  // grant is recorded but macOS won't honour it for the daemon; re-toggling re-records it.
+  if (mismatch.restartWillHelp === false) {
+    return translate(
+      'auto.components.shared.MacFolderAccessFixDialog.stepAllowHow',
+      'Turn on your {{folder}} for Orca. If it’s already on, turn it off and on again.',
+      { folder }
+    )
+  }
+  // A probe that could not answer must not accuse the user of a missing grant.
+  if (mismatch.restartWillHelp === null) {
+    return translate(
+      'auto.components.shared.MacFolderAccessFixDialog.stepAllowUnknown',
+      'Couldn’t verify. Skip if already allowed.'
+    )
+  }
+  return undefined
+}
+
 function FixSteps({
   mismatch,
-  restartState
+  restartState,
+  folder
 }: {
   mismatch: PtyManagementFolderAccessMismatch
   restartState: RestartState
+  folder: string
 }): React.JSX.Element {
   return (
     <>
@@ -60,16 +85,7 @@ function FixSteps({
             'auto.components.shared.MacFolderAccessFixDialog.stepAllow',
             'Allow Orca under Files and Folders'
           )}
-          helper={
-            // Why only when unanswered: a probe that could not answer must not accuse the user of a
-            // missing grant, but it must say why the step is left to them.
-            mismatch.restartWillHelp === null
-              ? translate(
-                  'auto.components.shared.MacFolderAccessFixDialog.stepAllowUnknown',
-                  'Couldn’t verify. Skip if already allowed.'
-                )
-              : undefined
-          }
+          helper={allowStepHelper(mismatch, folder)}
         />
         <Step
           done={restartState === 'done'}
@@ -241,7 +257,7 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
             )}
           </DialogDescription>
         </DialogHeader>
-        <FixSteps mismatch={mismatch} restartState={restartState} />
+        <FixSteps mismatch={mismatch} restartState={restartState} folder={folder} />
         <DialogFooter>
           <FixFooter
             mismatch={mismatch}

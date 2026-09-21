@@ -88,6 +88,11 @@ describe('MacFolderAccessFixDialog', () => {
 
     expect(footerButton('Open System Settings')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
+    expect(
+      screen.getByText(
+        'Turn on your Documents folder for Orca. If it’s already on, turn it off and on again.'
+      )
+    ).toBeTruthy()
   })
 
   // An unanswered probe must not accuse the user of a missing grant, but the pane stays reachable.
