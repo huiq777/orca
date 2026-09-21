@@ -355,6 +355,23 @@ describe('MacFolderAccessFixDialog', () => {
     })
   })
 
+  // Reset failed, then the user granted it in System Settings: the failure is no longer true.
+  it('drops the reset failure once the grant lands', async () => {
+    const failure = 'Couldn’t reset the permission. Use System Settings instead.'
+    resetFolderAccess.mockResolvedValue({ outcome: 'reset_failed' })
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+    await userEvent.click(resetButton())
+    await waitFor(() => {
+      expect(screen.getByText(failure)).toBeTruthy()
+    })
+
+    verdict('allowed')
+
+    expect(screen.queryByText(failure)).toBeNull()
+    expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(1)
+  })
+
   // The remedy belongs to one folder on one daemon, so evidence that moves is a different remedy.
   it('closes itself when the evidence moves to another scope', async () => {
     openWith('denied')

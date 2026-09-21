@@ -128,7 +128,7 @@ function FixSteps({
           )}
         </p>
       ) : null}
-      {resetState === 'failed' ? (
+      {resetState === 'failed' && mismatch.freshDaemonAccess !== 'allowed' ? (
         <p className="text-sm text-destructive">
           {translate(
             'auto.components.shared.MacFolderAccessFixDialog.resetFailed',
