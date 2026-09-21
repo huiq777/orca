@@ -97,7 +97,7 @@ describe('MacFolderAccessFixDialog', () => {
 
     expect(footerButton('Open System Settings')).toBeTruthy()
     expect(restartButton().hasAttribute('disabled')).toBe(false)
-    expect(screen.getByText(/Orca couldn’t check this/)).toBeTruthy()
+    expect(screen.getByText('Couldn’t verify. Skip if already allowed.')).toBeTruthy()
   })
 
   it('flips step one to done when a later poll reports the grant landed', async () => {
@@ -163,20 +163,17 @@ describe('MacFolderAccessFixDialog', () => {
     })
   })
 
-  it('replaces the steps with a done line and hands the toast to the notice hook', async () => {
+  it('checks off both steps, offers Done, and hands the toast to the notice hook', async () => {
     openWith(true)
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
 
     await waitFor(() => {
-      expect(
-        screen.getByText(
-          'Terminal service restarted. Terminals in your Documents folder should work now.'
-        )
-      ).toBeTruthy()
+      expect(footerButton('Done')).toBeTruthy()
     })
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
+    expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(2)
     expect(useMacFolderAccessFixStore.getState().restartedScope).toBe('aaaa111122223333')
   })
 

@@ -55,7 +55,7 @@ function FixSteps({
     <>
       <ol className="flex flex-col gap-3">
         <Step
-          done={mismatch.restartWillHelp === true}
+          done={mismatch.restartWillHelp === true || restartState === 'done'}
           label={translate(
             'auto.components.shared.MacFolderAccessFixDialog.stepAllow',
             'Allow Orca under Files and Folders'
@@ -66,13 +66,13 @@ function FixSteps({
             mismatch.restartWillHelp === null
               ? translate(
                   'auto.components.shared.MacFolderAccessFixDialog.stepAllowUnknown',
-                  'Orca couldn’t check this. Skip it if Orca is already allowed.'
+                  'Couldn’t verify. Skip if already allowed.'
                 )
               : undefined
           }
         />
         <Step
-          done={false}
+          done={restartState === 'done'}
           label={translate(
             'auto.components.shared.MacFolderAccessFixDialog.stepRestart',
             'Restart Orca’s terminal service'
@@ -117,7 +117,7 @@ function FixFooter({
   if (restartState === 'done') {
     return (
       <Button size="sm" onClick={onCancel}>
-        {translate('auto.components.shared.MacFolderAccessFixDialog.close', 'Close')}
+        {translate('auto.components.shared.MacFolderAccessFixDialog.done', 'Done')}
       </Button>
     )
   }
@@ -241,17 +241,7 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
             )}
           </DialogDescription>
         </DialogHeader>
-        {restartState === 'done' ? (
-          <p className="text-sm text-foreground">
-            {translate(
-              'auto.components.shared.MacFolderAccessFixDialog.done',
-              'Terminal service restarted. Terminals in your {{folder}} should work now.',
-              { folder }
-            )}
-          </p>
-        ) : (
-          <FixSteps mismatch={mismatch} restartState={restartState} />
-        )}
+        <FixSteps mismatch={mismatch} restartState={restartState} />
         <DialogFooter>
           <FixFooter
             mismatch={mismatch}
