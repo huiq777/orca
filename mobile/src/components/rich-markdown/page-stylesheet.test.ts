@@ -65,6 +65,18 @@ describe('the editor stylesheet on the page', () => {
     )
   })
 
+  it('refuses a descendant of the document root, which reads as no leading element at all', () => {
+    // `:root` starts with a colon, so the leading-element read answers the empty string and the
+    // selector fell through to `.host :root .foo` — a rule that matches nothing, silently.
+    for (const selector of [':root .foo', ':root > .foo', ':root.theme']) {
+      expect(() => scopeDocumentStyleToHost(`${selector} { color: red; }`, PREFIX)).toThrow(
+        'cannot be moved onto a host'
+      )
+    }
+    // The bare name is still the host itself, which is the case the sheet actually has.
+    expect(scopeDocumentStyleToHost(':root { color: red; }', PREFIX)).toContain(`${PREFIX} {`)
+  })
+
   it('refuses a sheet whose shape it cannot rewrite, as the other half does', () => {
     expect(() =>
       scopeDocumentStyleToHost('@media (min-width: 1px) { .a { color: red; } }', PREFIX)

@@ -101,6 +101,19 @@ export function scopeStyleToHost(css: string, prefix: string): string {
 const DOCUMENT_ROOT_SELECTORS = ['html', 'body', ':root']
 
 /**
+ * Whether a selector starts at the document rather than being one of its names.
+ *
+ * `leadingElement` splits on `:`, so it answers the empty string for anything beginning `:root` and
+ * the check below would have let `:root .foo` through to `${prefix} :root .foo` — a rule that
+ * matches nothing, silently. `html` and `body` are read the way they always were.
+ */
+function startsAtDocumentRoot(selector: string): boolean {
+  return (
+    DOCUMENT_ROOT_SELECTORS.includes(leadingElement(selector)) || /^:root(?![\w-])/.test(selector)
+  )
+}
+
+/**
  * One selector as the host's subtree spells it.
  *
  * `*` becomes the host and everything in it, because that is what the document meant by it — the
@@ -119,7 +132,7 @@ function hostSelectors(selector: string, prefix: string): string[] {
   if (DOCUMENT_ROOT_SELECTORS.includes(one)) {
     return [prefix]
   }
-  if (DOCUMENT_ROOT_SELECTORS.includes(leadingElement(one))) {
+  if (startsAtDocumentRoot(one)) {
     throw new Error(`a selector under the document cannot be moved onto a host: ${one}`)
   }
   return [`${prefix} ${one}`]
