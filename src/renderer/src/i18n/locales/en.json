@@ -4534,7 +4534,6 @@
           "updateActionMany": "Update {{value0}} skills",
           "checkNow": "Re-check",
           "done": "Done",
-          "close": "Close",
           "stop": "Stop",
           "stopping": "Stopping…",
           "stoppingHeadline": "Stopping the update…",
