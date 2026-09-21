@@ -110,10 +110,14 @@ function FixSteps({
             'auto.components.shared.MacFolderAccessFixDialog.stepRestart',
             'Restart Orca’s terminal service'
           )}
-          helper={translate(
-            'auto.components.shared.MacFolderAccessFixDialog.restartConsequence',
-            'Open terminals and agents will restart.'
-          )}
+          helper={
+            restartState === 'done'
+              ? undefined
+              : translate(
+                  'auto.components.shared.MacFolderAccessFixDialog.restartConsequence',
+                  'Open terminals and agents will restart.'
+                )
+          }
         />
       </ol>
       {restartState === 'failed' ? (
