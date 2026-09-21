@@ -219,8 +219,33 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * and the two it reaches, `agent-session-conversation-name.ts` and `surrogate-safe-text-slice.ts`,
  * entered the page bundle between C7.7's measurement on `f07bf8544c` and its merge. Named by
  * diffing the closure at `f07bf8544c` against `2739246058`; nothing on the C7.7 side moved.
+ *
+ * Then C7.10 item C put the rich Markdown editor on the page, and the list moved again. Its own
+ * reading, both sides measured with `mobileWebAppRouteClosure(SESSION_ROUTE)` at base `9267423f22`
+ * with all five postinstall generators run first:
+ *
+ *   modules        4333 -> 4360   (+27)
+ *   local modules   991 -> 1018   (+27)
+ *
+ * Every one of the 27 is local and none is vendored, because the editor is the app's own code
+ * rather than a library: the document's 24 modules under `src/components/rich-markdown/` — which
+ * C7.6's plain field did not reach at all — plus the page's mount, the toolbar both siblings render,
+ * and the controller and keyboard-inset module the native component already had. Nothing leaves:
+ * the web sibling replaces its own native file, which was never in this closure. Named by diffing
+ * the two `local` lists rather than inferred from the total.
+ *
+ * `terminal-webview-html/document-style-scoping.ts` is in the reading on both sides and costs
+ * nothing: the terminal's own mount already brings it, and the editor's mount imports the second
+ * export it grew rather than a module of its own.
+ *
+ * What the generation weighs, measured the same way on both sides: 8,028,418 -> 8,056,166 bytes
+ * (+27,748) across 109 assets, against the 9 MiB ceiling in `verify-mobile-web-app-bundle.mjs` —
+ * 85.1% of it before and 85.4% after. The script count does not move at all (67, against the
+ * 76 the chunk fence allows for 15 routes) and neither does the entry's static closure
+ * (1,612,052 bytes against a 3 MiB bound): the editor is code the session route already reached
+ * for, not a new chunk boundary.
  */
-const SESSION_ROUTE_MODULES = 4333
+const SESSION_ROUTE_MODULES = 4360
 
 /** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
 const ROUTE_ENTRY = [
