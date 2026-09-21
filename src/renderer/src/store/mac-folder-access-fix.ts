@@ -8,15 +8,20 @@ import type { PtyManagementFolderAccessMismatch } from '../../../preload/api-typ
 export const FOLDER_ACCESS_MISMATCH_NOTICE_ID = 'mac-daemon-folder-access-mismatch'
 
 type MacFolderAccessFixState = {
-  open: boolean
+  /** The latest verdict main reported, whatever scope it is about. The dialog renders this one. */
   mismatch: PtyManagementFolderAccessMismatch | null
+  /**
+   * The scope the user asked to fix. The dialog shows only while it still matches the evidence, so
+   * evidence that moves to another scope closes it rather than retargeting it mid-remedy.
+   */
+  openScope: string | null
   /** The scope whose toast is on screen, and the scopes that may never raise one again. */
   visibleScope: string | null
   dismissedScopes: ReadonlySet<string>
-  openFix: (mismatch: PtyManagementFolderAccessMismatch) => void
+  openFix: () => void
   close: () => void
-  /** Carries a later poll's verdict into an open dialog so its first step can complete itself. */
-  applyPollVerdict: (mismatch: PtyManagementFolderAccessMismatch | null) => void
+  /** Every verdict main produces — a poll or a reset's forced re-probe — lands here unconditionally. */
+  applyVerdict: (mismatch: PtyManagementFolderAccessMismatch | null) => void
   showNotice: (daemonScope: string) => void
   /** Anyone but the user taking the toast down — a restart, or a poll that read no daemon. */
   retireNotice: (daemonScope: string) => void
@@ -25,18 +30,13 @@ type MacFolderAccessFixState = {
 }
 
 export const useMacFolderAccessFixStore = create<MacFolderAccessFixState>()((set, get) => ({
-  open: false,
   mismatch: null,
+  openScope: null,
   visibleScope: null,
   dismissedScopes: new Set<string>(),
-  openFix: (mismatch) => set({ open: true, mismatch }),
-  close: () => set({ open: false }),
-  applyPollVerdict: (mismatch) =>
-    set((state) =>
-      // Why the scope compare: a replacement daemon's denial is a different remedy, and the open
-      // dialog must not silently retarget itself onto it.
-      mismatch && state.mismatch?.daemonScope === mismatch.daemonScope ? { mismatch } : state
-    ),
+  openFix: () => set((state) => ({ openScope: state.mismatch?.daemonScope ?? null })),
+  close: () => set({ openScope: null }),
+  applyVerdict: (mismatch) => set({ mismatch }),
   showNotice: (daemonScope) => set({ visibleScope: daemonScope }),
   retireNotice: (daemonScope) => {
     if (get().visibleScope !== daemonScope) {

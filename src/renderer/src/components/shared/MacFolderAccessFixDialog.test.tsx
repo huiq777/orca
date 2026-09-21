@@ -22,10 +22,14 @@ import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
 
 function openWith(freshDaemonAccess: 'allowed' | 'denied' | 'unknown'): void {
   useMacFolderAccessFixStore.setState({
-    open: true,
     mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess },
+    openScope: 'aaaa111122223333',
     visibleScope: 'aaaa111122223333'
   })
+}
+
+function dialogShown(): boolean {
+  return screen.queryByRole('dialog') !== null
 }
 
 function restartButton(): HTMLElement {
@@ -59,8 +63,8 @@ beforeEach(() => {
   resetFolderAccess.mockReset()
   probed('denied')
   useMacFolderAccessFixStore.setState({
-    open: false,
     mismatch: null,
+    openScope: null,
     visibleScope: null,
     dismissedScopes: new Set<string>()
   })
@@ -131,7 +135,7 @@ describe('MacFolderAccessFixDialog', () => {
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
 
     act(() => {
-      useMacFolderAccessFixStore.getState().applyPollVerdict({
+      useMacFolderAccessFixStore.getState().applyVerdict({
         daemonScope: 'aaaa111122223333',
         cwdClass: 'documents',
         freshDaemonAccess: 'allowed'
@@ -267,7 +271,6 @@ describe('MacFolderAccessFixDialog', () => {
     expect(footerButton('Open System Settings')).toBeTruthy()
   })
 
-  // An unanswered re-probe is not evidence the reset worked, so the line stays up.
   // Evidence gone mid-reset means the daemon was replaced; nothing is left to fix here.
   it('closes when the reset finds the evidence gone', async () => {
     resetFolderAccess.mockResolvedValue({ outcome: 'probed', mismatch: null })
@@ -277,9 +280,25 @@ describe('MacFolderAccessFixDialog', () => {
     await userEvent.click(resetButton())
 
     await waitFor(() => {
-      expect(useMacFolderAccessFixStore.getState().open).toBe(false)
+      expect(dialogShown()).toBe(false)
     })
-    expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+    expect(useMacFolderAccessFixStore.getState().mismatch).toBeNull()
+  })
+
+  // The remedy belongs to one folder on one daemon, so evidence that moves is a different remedy.
+  it('closes itself when the evidence moves to another scope', async () => {
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+
+    act(() => {
+      useMacFolderAccessFixStore.getState().applyVerdict({
+        daemonScope: 'bbbb444455556666',
+        cwdClass: 'desktop',
+        freshDaemonAccess: 'denied'
+      })
+    })
+
+    expect(dialogShown()).toBe(false)
   })
 
   it('drops the unverified helper once the restart is done', async () => {
@@ -344,14 +363,13 @@ describe('MacFolderAccessFixDialog', () => {
     expect(footerButton('Cancel').hasAttribute('disabled')).toBe(true)
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
     await userEvent.keyboard('{Escape}')
-    expect(useMacFolderAccessFixStore.getState().open).toBe(true)
+    expect(dialogShown()).toBe(true)
 
     await act(async () => {
       release({ outcome: 'unsupported' })
     })
   })
 
-  // The host never unmounts, so a finished remedy must not tick the next daemon's checklist.
   it('starts a replacement daemon’s remedy from scratch', async () => {
     openWith('allowed')
     render(<MacFolderAccessFixDialog />)
@@ -362,16 +380,36 @@ describe('MacFolderAccessFixDialog', () => {
     await userEvent.click(footerButton('Done'))
 
     act(() => {
-      useMacFolderAccessFixStore.getState().openFix({
+      useMacFolderAccessFixStore.getState().applyVerdict({
         daemonScope: 'bbbb444455556666',
         cwdClass: 'documents',
         freshDaemonAccess: 'denied'
       })
+      useMacFolderAccessFixStore.getState().openFix()
     })
 
     expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(0)
     expect(footerButton('Reset permission')).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Done' })).toBeNull()
+  })
+
+  // Closing unmounts the remedy, so no phase of it can be waiting when the same scope reopens.
+  it('reopens the same scope with an unticked checklist', async () => {
+    openWith('allowed')
+    render(<MacFolderAccessFixDialog />)
+    await userEvent.click(restartButton())
+    await waitFor(() => {
+      expect(footerButton('Done')).toBeTruthy()
+    })
+    await userEvent.click(footerButton('Done'))
+
+    act(() => {
+      useMacFolderAccessFixStore.getState().openFix()
+    })
+
+    // One tick, from the verdict's own step; two would mean the finished restart outlived its close.
+    expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(1)
+    expect(restartButton()).toBeTruthy()
   })
 
   it('closes on Cancel', async () => {
@@ -380,6 +418,6 @@ describe('MacFolderAccessFixDialog', () => {
 
     await userEvent.click(footerButton('Cancel'))
 
-    expect(useMacFolderAccessFixStore.getState().open).toBe(false)
+    expect(dialogShown()).toBe(false)
   })
 })

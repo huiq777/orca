@@ -291,8 +291,8 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     vi.mocked(toast.warning).mockClear()
     vi.mocked(toast.dismiss).mockClear()
     useMacFolderAccessFixStore.setState({
-      open: false,
       mismatch: null,
+      openScope: null,
       visibleScope: null,
       dismissedScopes: new Set<string>()
     })
@@ -346,7 +346,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       folderNoticeCalls()[0].options.action?.onClick?.()
     })
 
-    expect(useMacFolderAccessFixStore.getState().open).toBe(true)
+    expect(useMacFolderAccessFixStore.getState().openScope).toBe(SCOPE_A.daemonScope)
     expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(SCOPE_A)
     expect(openSettingsPage).not.toHaveBeenCalled()
     expect(trackTelemetry).toHaveBeenCalledWith('daemon_folder_access_notice', {
@@ -378,7 +378,9 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
   })
 
-  it('leaves the open dialog pointed at its own daemon when another is denied', async () => {
+  // The open remedy belongs to one scope, so evidence that moves closes it rather than retargeting
+  // the title, the checklist, and the reset onto a folder the user never asked about.
+  it('closes the open dialog when the evidence moves to another scope', async () => {
     macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: SCOPE_A })
     render(<MacosTccPromptNoticeHost />)
     await waitFor(() => {
@@ -393,10 +395,36 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       window.dispatchEvent(new Event('focus'))
     })
     await waitFor(() => {
+      expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(SCOPE_B)
+    })
+
+    expect(useMacFolderAccessFixStore.getState().openScope).toBe(SCOPE_A.daemonScope)
+  })
+
+  // The toast outlives the poll that raised it, and a restart offered against a stale `unknown`
+  // would kill every terminal for a daemon that is provably denied.
+  it('opens the dialog on the latest verdict, not the one that raised the toast', async () => {
+    const unanswered = { ...SCOPE_A, freshDaemonAccess: 'unknown' }
+    macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: unanswered })
+    render(<MacosTccPromptNoticeHost />)
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(1)
+    })
+    const denied = { ...SCOPE_A, freshDaemonAccess: 'denied' }
+    macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: denied })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
       expect(macTccAttribution).toHaveBeenCalledTimes(2)
     })
 
-    expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(SCOPE_A)
+    act(() => {
+      folderNoticeCalls()[0].options.action?.onClick?.()
+    })
+
+    expect(folderNoticeCalls()).toHaveLength(1)
+    expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(denied)
   })
 
   it('substitutes the folder word for each protected class', async () => {

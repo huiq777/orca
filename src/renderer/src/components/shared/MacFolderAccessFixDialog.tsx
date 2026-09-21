@@ -220,14 +220,12 @@ function FixFooter({
  * step 1 does, and the focus-time poll behind `freshDaemonAccess` is what notices it landed.
  */
 function FolderAccessFix({
-  mismatch,
-  open
+  mismatch
 }: {
   mismatch: PtyManagementFolderAccessMismatch
-  open: boolean
 }): React.JSX.Element {
   const close = useMacFolderAccessFixStore((s) => s.close)
-  const applyPollVerdict = useMacFolderAccessFixStore((s) => s.applyPollVerdict)
+  const applyVerdict = useMacFolderAccessFixStore((s) => s.applyVerdict)
   const retireNotice = useMacFolderAccessFixStore((s) => s.retireNotice)
   const [restartState, setRestartState] = useState<RestartState>('idle')
   const [resetState, setResetState] = useState<ResetState>('idle')
@@ -251,20 +249,16 @@ function FolderAccessFix({
         setResetState('failed')
         return
       }
-      // Why close on null: the evidence is gone (daemon replaced mid-reset), so there is nothing
-      // left for this dialog to fix and the next poll retires the toast.
-      if (result.mismatch === null) {
-        close()
-        return
-      }
       setResetState('probed')
-      applyPollVerdict(result.mismatch)
+      // A null verdict means the evidence is gone (daemon replaced mid-reset), which unmounts this
+      // dialog: there is nothing left for it to fix.
+      applyVerdict(result.mismatch)
     } catch {
       if (mountedRef.current) {
         setResetState('failed')
       }
     }
-  }, [applyPollVerdict, close, cwdClass, mountedRef])
+  }, [applyVerdict, cwdClass, mountedRef])
 
   const onRestart = useCallback(async (): Promise<void> => {
     track('daemon_folder_access_notice', { action: 'restart_clicked', cwd_class: cwdClass })
@@ -291,7 +285,7 @@ function FolderAccessFix({
   const busy = restartState === 'busy' || resetState === 'busy'
   return (
     <Dialog
-      open={open}
+      open
       onOpenChange={(next) => {
         if (!next && !busy) {
           close()
@@ -349,13 +343,16 @@ function FolderAccessFix({
   )
 }
 
+/**
+ * Shown only while the scope the user opened is still the one the evidence is about, so no remedy
+ * phase can outlive its evidence and nothing here has to be closed by hand.
+ */
 export function MacFolderAccessFixDialog(): React.JSX.Element | null {
-  const open = useMacFolderAccessFixStore((s) => s.open)
   const mismatch = useMacFolderAccessFixStore((s) => s.mismatch)
-  if (!mismatch) {
+  const openScope = useMacFolderAccessFixStore((s) => s.openScope)
+  if (!mismatch || openScope !== mismatch.daemonScope) {
     return null
   }
-  // Why keyed by scope: a replacement daemon's denial is a new remedy, and its checklist must
-  // start unticked rather than inherit the previous one's ticks from a host that never unmounts.
-  return <FolderAccessFix key={mismatch.daemonScope} mismatch={mismatch} open={open} />
+  // Keyed as well as unmounted: a finished checklist must never tick the next remedy's steps.
+  return <FolderAccessFix key={mismatch.daemonScope} mismatch={mismatch} />
 }

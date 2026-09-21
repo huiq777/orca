@@ -105,10 +105,11 @@ export function useMacTccAttributionSeveredNotice(): void {
     }
 
     const applyFolderAccessNotice = (mismatch: PtyManagementFolderAccessMismatch | null): void => {
-      const { visibleScope, dismissedScopes, applyPollVerdict, retireNotice, showNotice, openFix } =
+      const { visibleScope, dismissedScopes, applyVerdict, retireNotice, showNotice, openFix } =
         useMacFolderAccessFixStore.getState()
-      // Why unconditionally: an open dialog's first step completes only when a later poll says so.
-      applyPollVerdict(mismatch)
+      // Why unconditionally: this is the evidence the dialog renders, and an open one completes
+      // its first step only when a later poll says the grant landed.
+      applyVerdict(mismatch)
       if (!mismatch) {
         // Why retire rather than latch: main reads a null daemon identity during any reconnect
         // blip and reports it as "no mismatch", and the same daemon must be able to show again.
@@ -141,7 +142,8 @@ export function useMacTccAttributionSeveredNotice(): void {
             label: translate('auto.hooks.useMacTccAttributionSeveredNotice.folderAccessFix', 'Fix'),
             onClick: () => {
               track('daemon_folder_access_notice', { action: 'fix_opened', cwd_class: cwdClass })
-              openFix(mismatch)
+              // No captured verdict: the dialog opens on whatever the latest poll reported.
+              openFix()
             }
           },
           // Why onDismiss, no cancel button: every other toast dismisses through the X alone.
