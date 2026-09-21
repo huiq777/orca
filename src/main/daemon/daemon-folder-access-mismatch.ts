@@ -151,10 +151,9 @@ export function clearDaemonFolderAccessMismatch(
   if (!identity) {
     return
   }
-  const daemonKey = daemonKeyOf(identity)
   const cwdClass = classifyDaemonPtyCwd(cwd, homedir())
-  reportOutcomeIfReplacementDaemon(daemonKey, cwdClass, true)
-  if (stored?.daemonKey === daemonKey && stored.cwdClass === cwdClass) {
+  reportOutcomeIfReplacementDaemon(daemonKeyOf(identity), cwdClass, true)
+  if (entryFor(identity)?.cwdClass === cwdClass) {
     stored = null
   }
 }
