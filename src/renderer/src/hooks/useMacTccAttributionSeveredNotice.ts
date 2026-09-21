@@ -15,7 +15,8 @@ import { MANAGE_SESSIONS_SECTION_ID } from '@/components/settings/TerminalTccAtt
 import { macFolderAccessFolderName } from '@/components/shared/mac-folder-access-folder-name'
 import {
   FOLDER_ACCESS_MISMATCH_NOTICE_ID,
-  useMacFolderAccessFixStore
+  useMacFolderAccessFixStore,
+  visibleNoticeScope
 } from '@/store/mac-folder-access-fix'
 
 const SEVERED_TCC_NOTICE_ID = 'mac-tcc-attribution-severed'
@@ -105,7 +106,7 @@ export function useMacTccAttributionSeveredNotice(): void {
     }
 
     const applyFolderAccessNotice = (mismatch: PtyManagementFolderAccessMismatch | null): void => {
-      const { visibleScope, dismissedScopes, applyVerdict, retireNotice, showNotice, openFix } =
+      const { noticePhaseByScope, applyVerdict, retireNotice, showNotice, openFix } =
         useMacFolderAccessFixStore.getState()
       // Why unconditionally: this is the evidence the dialog renders, and an open one completes
       // its first step only when a later poll says the grant landed.
@@ -113,18 +114,23 @@ export function useMacTccAttributionSeveredNotice(): void {
       if (!mismatch) {
         // Why retire rather than latch: main reads a null daemon identity during any reconnect
         // blip and reports it as "no mismatch", and the same daemon must be able to show again.
-        if (visibleScope) {
-          retireNotice(visibleScope)
+        const visible = visibleNoticeScope(noticePhaseByScope)
+        if (visible) {
+          retireNotice(visible)
         }
         return
       }
       const { daemonScope, cwdClass } = mismatch
-      if (visibleScope === daemonScope || dismissedScopes.has(daemonScope)) {
+      const phase = noticePhaseByScope.get(daemonScope)
+      if (phase === 'visible' || phase === 'dismissed') {
         return
       }
       showNotice(daemonScope)
-      // Why here and not in main: this latch, not the IPC read, is what decides a scope is shown.
-      track('daemon_folder_access_notice', { action: 'shown', cwd_class: cwdClass })
+      // Counted once per scope, not once per raise: a retired scope re-shows after a reconnect
+      // blip, and that second toast is the same notice, not a second affected user.
+      if (phase === undefined) {
+        track('daemon_folder_access_notice', { action: 'shown', cwd_class: cwdClass })
+      }
       toast.warning(
         translate(
           'auto.hooks.useMacTccAttributionSeveredNotice.folderAccessTitle',
@@ -150,7 +156,7 @@ export function useMacTccAttributionSeveredNotice(): void {
           // Sonner fires it for a programmatic takedown too, which has already cleared the scope.
           onDismiss: () => {
             const store = useMacFolderAccessFixStore.getState()
-            if (store.visibleScope !== daemonScope) {
+            if (store.noticePhaseByScope.get(daemonScope) !== 'visible') {
               return
             }
             store.dismissNotice(daemonScope)

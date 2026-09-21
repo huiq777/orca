@@ -7,6 +7,25 @@ import type { PtyManagementFolderAccessMismatch } from '../../../preload/api-typ
 
 export const FOLDER_ACCESS_MISMATCH_NOTICE_ID = 'mac-daemon-folder-access-mismatch'
 
+/**
+ * Where a scope's notice stands. `retired` is a takedown nobody asked for — a restart, or a poll
+ * that read no daemon through a reconnect blip — so the scope may raise again; `dismissed` is the
+ * user's own close and is final for the session. A scope absent from the map has never been shown.
+ */
+export type FolderAccessNoticePhase = 'visible' | 'retired' | 'dismissed'
+
+/** At most one, because sonner keeps a single toast under the notice's id. */
+export function visibleNoticeScope(
+  noticePhaseByScope: ReadonlyMap<string, FolderAccessNoticePhase>
+): string | null {
+  for (const [daemonScope, phase] of noticePhaseByScope) {
+    if (phase === 'visible') {
+      return daemonScope
+    }
+  }
+  return null
+}
+
 type MacFolderAccessFixState = {
   /** The latest verdict main reported, whatever scope it is about. The dialog renders this one. */
   mismatch: PtyManagementFolderAccessMismatch | null
@@ -15,41 +34,47 @@ type MacFolderAccessFixState = {
    * evidence that moves to another scope closes it rather than retargeting it mid-remedy.
    */
   openScope: string | null
-  /** The scope whose toast is on screen, and the scopes that may never raise one again. */
-  visibleScope: string | null
-  dismissedScopes: ReadonlySet<string>
+  /** Every scope that has ever raised a notice, and where each one stands now. */
+  noticePhaseByScope: ReadonlyMap<string, FolderAccessNoticePhase>
   openFix: () => void
   close: () => void
   /** Every verdict main produces — a poll or a reset's forced re-probe — lands here unconditionally. */
   applyVerdict: (mismatch: PtyManagementFolderAccessMismatch | null) => void
   showNotice: (daemonScope: string) => void
-  /** Anyone but the user taking the toast down — a restart, or a poll that read no daemon. */
   retireNotice: (daemonScope: string) => void
-  /** The user's own close, which keeps the scope quiet for the rest of the session. */
   dismissNotice: (daemonScope: string) => void
 }
 
 export const useMacFolderAccessFixStore = create<MacFolderAccessFixState>()((set, get) => ({
   mismatch: null,
   openScope: null,
-  visibleScope: null,
-  dismissedScopes: new Set<string>(),
+  noticePhaseByScope: new Map<string, FolderAccessNoticePhase>(),
   openFix: () => set((state) => ({ openScope: state.mismatch?.daemonScope ?? null })),
   close: () => set({ openScope: null }),
   applyVerdict: (mismatch) => set({ mismatch }),
-  showNotice: (daemonScope) => set({ visibleScope: daemonScope }),
+  showNotice: (daemonScope) =>
+    set((state) => {
+      const next = new Map(state.noticePhaseByScope)
+      for (const [scope, phase] of next) {
+        // One toast id, so raising this scope is what takes the previous one off screen.
+        if (phase === 'visible' && scope !== daemonScope) {
+          next.set(scope, 'retired')
+        }
+      }
+      return { noticePhaseByScope: next.set(daemonScope, 'visible') }
+    }),
   retireNotice: (daemonScope) => {
-    if (get().visibleScope !== daemonScope) {
+    const { noticePhaseByScope } = get()
+    if (noticePhaseByScope.get(daemonScope) !== 'visible') {
       return
     }
-    // Why clear first: sonner reports a programmatic dismissal through `onDismiss` too, and only
+    // Why retire first: sonner reports a programmatic dismissal through `onDismiss` too, and only
     // a still-visible scope there is the user's doing.
-    set({ visibleScope: null })
+    set({ noticePhaseByScope: new Map(noticePhaseByScope).set(daemonScope, 'retired') })
     toast.dismiss(FOLDER_ACCESS_MISMATCH_NOTICE_ID)
   },
   dismissNotice: (daemonScope) =>
     set((state) => ({
-      visibleScope: null,
-      dismissedScopes: new Set(state.dismissedScopes).add(daemonScope)
+      noticePhaseByScope: new Map(state.noticePhaseByScope).set(daemonScope, 'dismissed')
     }))
 }))

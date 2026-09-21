@@ -4,7 +4,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, waitFor } from '@testing-library/react'
 import { toast } from 'sonner'
 import { MacosTccPromptNoticeHost } from './MacosTccPromptNoticeHost'
-import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
+import {
+  useMacFolderAccessFixStore,
+  type FolderAccessNoticePhase
+} from '@/store/mac-folder-access-fix'
 
 type FolderAccessMismatch = {
   daemonScope: string
@@ -263,6 +266,10 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       .map(([, props]) => props)
   }
 
+  function noticePhase(daemonScope: string): FolderAccessNoticePhase | undefined {
+    return useMacFolderAccessFixStore.getState().noticePhaseByScope.get(daemonScope)
+  }
+
   function shownEvents(): Record<string, unknown>[] {
     return trackTelemetry.mock.calls
       .filter(([name, props]) => name === 'daemon_folder_access_notice' && props.action === 'shown')
@@ -293,8 +300,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     useMacFolderAccessFixStore.setState({
       mismatch: null,
       openScope: null,
-      visibleScope: null,
-      dismissedScopes: new Set<string>()
+      noticePhaseByScope: new Map<string, FolderAccessNoticePhase>()
     })
     onDismissById.clear()
     Object.defineProperty(window, 'api', {
@@ -519,7 +525,9 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
   })
 
-  it('re-shows the same daemon after a poll that briefly reported nothing', async () => {
+  // A reconnect blip reports no daemon and takes the toast down, so the same notice comes back.
+  // Counting that raise would inflate the denominator the affected-user rate is read against.
+  it('re-shows the same daemon after a poll that briefly reported nothing, counting it once', async () => {
     macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: SCOPE_A })
     render(<MacosTccPromptNoticeHost />)
     await waitFor(() => {
@@ -540,6 +548,8 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     await waitFor(() => {
       expect(folderNoticeCalls()).toHaveLength(2)
     })
+    expect(shownEvents()).toHaveLength(1)
+    expect(noticePhase(SCOPE_A.daemonScope)).toBe('visible')
   })
 
   it('shows again when a replacement daemon is denied too', async () => {
@@ -557,6 +567,8 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(folderNoticeCalls()).toHaveLength(2)
     })
     expect(folderNoticeCalls()[1].title).toContain('Desktop folder')
+    // A second scope is a second affected notice, so it does count.
+    expect(shownEvents()).toHaveLength(2)
   })
 
   // A second scope — a replacement daemon, or one daemon denied a second folder class — reuses the
@@ -581,8 +593,8 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
 
     expect(dismissedEvents()).toHaveLength(0)
-    expect(useMacFolderAccessFixStore.getState().dismissedScopes.size).toBe(0)
-    expect(useMacFolderAccessFixStore.getState().visibleScope).toBe(SCOPE_B.daemonScope)
+    expect(noticePhase(SCOPE_A.daemonScope)).toBe('retired')
+    expect(noticePhase(SCOPE_B.daemonScope)).toBe('visible')
   })
 
   // A takedown the user did not ask for reaches the same callback, and must not read as their X.
