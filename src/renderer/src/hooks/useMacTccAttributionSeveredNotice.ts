@@ -25,9 +25,6 @@ export function useMacTccAttributionSeveredNotice(): void {
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
   const openSettingsTarget = useAppStore((s) => s.openSettingsTarget)
   const setSettingsSearchQuery = useAppStore((s) => s.setSettingsSearchQuery)
-  const openFix = useMacFolderAccessFixStore((s) => s.openFix)
-  const observeMismatch = useMacFolderAccessFixStore((s) => s.observeMismatch)
-  const restartedScope = useMacFolderAccessFixStore((s) => s.restartedScope)
   const uiLanguage = useAppStore((s) => s.settings?.uiLanguage ?? null)
   const pluginLanguagePacks = usePluginLanguagePackStore((s) => s.packs)
   const pluginLanguagePacksLoaded = usePluginLanguagePackStore((s) => s.loaded)
@@ -45,18 +42,6 @@ export function useMacTccAttributionSeveredNotice(): void {
   const toastedThisSession = useRef(false)
   // Why: toast was only marked after await; a focus/effect re-run mid-check could dual-toast.
   const checkInFlight = useRef(false)
-  // Scope latches the folder notice to the daemon that earned it: a restart mints a new scope,
-  // so the remedy can be offered again, while a dismissed scope stays dismissed this session.
-  const folderScopesShown = useRef(new Set<string>())
-  const visibleFolderScope = useRef<string | null>(null)
-
-  // The fix dialog restarted this daemon: retire its toast before the next poll would.
-  useEffect(() => {
-    if (restartedScope && visibleFolderScope.current === restartedScope) {
-      visibleFolderScope.current = null
-      toast.dismiss(FOLDER_ACCESS_MISMATCH_NOTICE_ID)
-    }
-  }, [restartedScope])
 
   useEffect(() => {
     if (
@@ -120,31 +105,30 @@ export function useMacTccAttributionSeveredNotice(): void {
     }
 
     const applyFolderAccessNotice = (mismatch: PtyManagementFolderAccessMismatch | null): void => {
+      const { visibleScope, dismissedScopes, applyPollVerdict, retireNotice, showNotice, openFix } =
+        useMacFolderAccessFixStore.getState()
       // Why unconditionally: an open dialog's first step completes only when a later poll says so.
-      observeMismatch(mismatch)
+      applyPollVerdict(mismatch)
       if (!mismatch) {
-        if (visibleFolderScope.current) {
-          // Why forget the scope: main reads a null daemon identity during any reconnect blip and
-          // reports it as "no mismatch". If the same daemon comes back denied, it must show again;
-          // only a user's "Not now" keeps a scope latched.
-          folderScopesShown.current.delete(visibleFolderScope.current)
-          visibleFolderScope.current = null
-          toast.dismiss(FOLDER_ACCESS_MISMATCH_NOTICE_ID)
+        // Why retire rather than latch: main reads a null daemon identity during any reconnect
+        // blip and reports it as "no mismatch", and the same daemon must be able to show again.
+        if (visibleScope) {
+          retireNotice(visibleScope)
         }
         return
       }
-      if (folderScopesShown.current.has(mismatch.daemonScope)) {
+      const { daemonScope, cwdClass } = mismatch
+      if (visibleScope === daemonScope || dismissedScopes.has(daemonScope)) {
         return
       }
-      folderScopesShown.current.add(mismatch.daemonScope)
-      visibleFolderScope.current = mismatch.daemonScope
+      showNotice(daemonScope)
       // Why here and not in main: this latch, not the IPC read, is what decides a scope is shown.
-      track('daemon_folder_access_notice', { action: 'shown', cwd_class: mismatch.cwdClass })
+      track('daemon_folder_access_notice', { action: 'shown', cwd_class: cwdClass })
       toast.warning(
         translate(
           'auto.hooks.useMacTccAttributionSeveredNotice.folderAccessTitle',
           'Terminals can’t read your {{folder}}',
-          { folder: macFolderAccessFolderName(mismatch.cwdClass) }
+          { folder: macFolderAccessFolderName(cwdClass) }
         ),
         {
           id: FOLDER_ACCESS_MISMATCH_NOTICE_ID,
@@ -156,24 +140,19 @@ export function useMacTccAttributionSeveredNotice(): void {
           action: {
             label: translate('auto.hooks.useMacTccAttributionSeveredNotice.folderAccessFix', 'Fix'),
             onClick: () => {
-              track('daemon_folder_access_notice', {
-                action: 'fix_opened',
-                cwd_class: mismatch.cwdClass
-              })
+              track('daemon_folder_access_notice', { action: 'fix_opened', cwd_class: cwdClass })
               openFix(mismatch)
             }
           },
           // Why onDismiss, no cancel button: every other toast dismisses through the X alone.
-          // Sonner also fires it for toast.dismiss(), so a scope already cleared is not the user.
+          // Sonner fires it for a programmatic takedown too, which has already cleared the scope.
           onDismiss: () => {
-            if (visibleFolderScope.current !== mismatch.daemonScope) {
+            const store = useMacFolderAccessFixStore.getState()
+            if (store.visibleScope !== daemonScope) {
               return
             }
-            visibleFolderScope.current = null
-            track('daemon_folder_access_notice', {
-              action: 'dismissed',
-              cwd_class: mismatch.cwdClass
-            })
+            store.dismissNotice(daemonScope)
+            track('daemon_folder_access_notice', { action: 'dismissed', cwd_class: cwdClass })
           }
         }
       )
@@ -201,12 +180,5 @@ export function useMacTccAttributionSeveredNotice(): void {
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
-  }, [
-    localeReady,
-    observeMismatch,
-    openFix,
-    openSettingsPage,
-    openSettingsTarget,
-    setSettingsSearchQuery
-  ])
+  }, [localeReady, openSettingsPage, openSettingsTarget, setSettingsSearchQuery])
 }

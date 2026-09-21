@@ -65,16 +65,6 @@ function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | 
   return undefined
 }
 
-/** System Settings is the fallback, shown only once the reset has failed or left things blocked. */
-function settingsIsFallback(
-  mismatch: PtyManagementFolderAccessMismatch,
-  resetState: ResetState
-): boolean {
-  return (
-    resetState === 'failed' || (resetState === 'probed' && mismatch.freshDaemonAccess !== 'allowed')
-  )
-}
-
 function FixSteps({
   mismatch,
   restartState,
@@ -176,12 +166,13 @@ function FixFooter({
     )
   }
   // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot.
-  // System Settings appears only once the reset has failed or left things blocked: two routes for
-  // one step read as a choice the user cannot make.
+  // Two routes for one step would read as a choice the user cannot make.
   if (mismatch.freshDaemonAccess === 'denied') {
+    // System Settings is the fallback: it appears only once the reset has settled without helping.
+    const resetSettled = resetState === 'probed' || resetState === 'failed'
     return (
       <>
-        {settingsIsFallback(mismatch, resetState) ? (
+        {resetSettled ? (
           <Button variant="ghost" size="sm" onClick={onOpenSettings} disabled={busy}>
             {openSettingsLabel}
           </Button>
@@ -236,8 +227,8 @@ function FolderAccessFix({
   open: boolean
 }): React.JSX.Element {
   const close = useMacFolderAccessFixStore((s) => s.close)
-  const markRestarted = useMacFolderAccessFixStore((s) => s.markRestarted)
-  const observeMismatch = useMacFolderAccessFixStore((s) => s.observeMismatch)
+  const applyPollVerdict = useMacFolderAccessFixStore((s) => s.applyPollVerdict)
+  const retireNotice = useMacFolderAccessFixStore((s) => s.retireNotice)
   const [restartState, setRestartState] = useState<RestartState>('idle')
   const [resetState, setResetState] = useState<ResetState>('idle')
   const mountedRef = useMountedRef()
@@ -263,13 +254,13 @@ function FolderAccessFix({
       setResetState('probed')
       // Why through the store: the fresh verdict is what decides the next step, and a null one
       // leaves the dialog on the verdict it already had.
-      observeMismatch(result.mismatch)
+      applyPollVerdict(result.mismatch)
     } catch {
       if (mountedRef.current) {
         setResetState('failed')
       }
     }
-  }, [cwdClass, mountedRef, observeMismatch])
+  }, [applyPollVerdict, cwdClass, mountedRef])
 
   const onRestart = useCallback(async (): Promise<void> => {
     track('daemon_folder_access_notice', { action: 'restart_clicked', cwd_class: cwdClass })
@@ -281,16 +272,16 @@ function FolderAccessFix({
       }
       setRestartState(success ? 'done' : 'failed')
       if (success) {
-        // Why via the store: the replaced daemon's identity is gone, so the poll that raised the
-        // toast will never mention it again; the notice hook retires it without logging a dismiss.
-        markRestarted(daemonScope)
+        // Why here: the replaced daemon's identity is gone, so the poll that raised the toast will
+        // never mention it again, and a takedown the user did not ask for is not a dismissal.
+        retireNotice(daemonScope)
       }
     } catch {
       if (mountedRef.current) {
         setRestartState('failed')
       }
     }
-  }, [cwdClass, daemonScope, markRestarted, mountedRef])
+  }, [cwdClass, daemonScope, mountedRef, retireNotice])
 
   const folder = macFolderAccessFolderName(cwdClass)
   const busy = restartState === 'busy' || resetState === 'busy'

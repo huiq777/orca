@@ -23,7 +23,8 @@ import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
 function openWith(freshDaemonAccess: 'allowed' | 'denied' | 'unknown'): void {
   useMacFolderAccessFixStore.setState({
     open: true,
-    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess }
+    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess },
+    visibleScope: 'aaaa111122223333'
   })
 }
 
@@ -57,7 +58,12 @@ beforeEach(() => {
   openSettings.mockReset().mockResolvedValue(undefined)
   resetFolderAccess.mockReset()
   probed('denied')
-  useMacFolderAccessFixStore.setState({ open: false, mismatch: null, restartedScope: null })
+  useMacFolderAccessFixStore.setState({
+    open: false,
+    mismatch: null,
+    visibleScope: null,
+    dismissedScopes: new Set<string>()
+  })
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
@@ -125,7 +131,7 @@ describe('MacFolderAccessFixDialog', () => {
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
 
     act(() => {
-      useMacFolderAccessFixStore.getState().observeMismatch({
+      useMacFolderAccessFixStore.getState().applyPollVerdict({
         daemonScope: 'aaaa111122223333',
         cwdClass: 'documents',
         freshDaemonAccess: 'allowed'
@@ -193,7 +199,9 @@ describe('MacFolderAccessFixDialog', () => {
     })
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
     expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(2)
-    expect(useMacFolderAccessFixStore.getState().restartedScope).toBe('aaaa111122223333')
+    // The daemon that earned the notice is gone, so its toast goes without counting a dismissal.
+    expect(useMacFolderAccessFixStore.getState().visibleScope).toBeNull()
+    expect(useMacFolderAccessFixStore.getState().dismissedScopes.size).toBe(0)
   })
 
   it('reports a refused restart inline and leaves the button usable', async () => {
@@ -209,7 +217,7 @@ describe('MacFolderAccessFixDialog', () => {
       ).toBeTruthy()
     })
     expect(restartButton().hasAttribute('disabled')).toBe(false)
-    expect(useMacFolderAccessFixStore.getState().restartedScope).toBeNull()
+    expect(useMacFolderAccessFixStore.getState().visibleScope).toBe('aaaa111122223333')
   })
 
   it('reports a rejected restart the same way', async () => {

@@ -25,10 +25,22 @@ const openSettingsTarget = vi.hoisted(() => vi.fn())
 const setSettingsSearchQuery = vi.hoisted(() => vi.fn())
 const platform = vi.hoisted(() => ({ value: 'darwin' as NodeJS.Platform }))
 
+// Sonner routes a programmatic dismissal through the toast's own onDismiss, which is the only
+// reason the hook guards that callback at all.
+const onDismissById = vi.hoisted(() => new Map<string, () => void>())
+
 vi.mock('sonner', () => ({
   toast: {
-    warning: vi.fn(),
-    dismiss: vi.fn()
+    warning: vi.fn((_title: string, options?: { id?: string; onDismiss?: () => void }) => {
+      if (options?.id !== undefined && options.onDismiss) {
+        onDismissById.set(options.id, options.onDismiss)
+      }
+    }),
+    dismiss: vi.fn((id?: string) => {
+      if (id !== undefined) {
+        onDismissById.get(id)?.()
+      }
+    })
   }
 }))
 
@@ -76,8 +88,9 @@ describe('useMacTccAttributionSeveredNotice', () => {
     openSettingsTarget.mockReset()
     setSettingsSearchQuery.mockReset()
     platform.value = 'darwin'
-    vi.mocked(toast.warning).mockReset()
-    vi.mocked(toast.dismiss).mockReset()
+    vi.mocked(toast.warning).mockClear()
+    vi.mocked(toast.dismiss).mockClear()
+    onDismissById.clear()
     Object.defineProperty(window, 'api', {
       configurable: true,
       value: {
@@ -242,6 +255,14 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     onDismiss?: () => void
   }
 
+  function dismissedEvents(): Record<string, unknown>[] {
+    return trackTelemetry.mock.calls
+      .filter(
+        ([name, props]) => name === 'daemon_folder_access_notice' && props.action === 'dismissed'
+      )
+      .map(([, props]) => props)
+  }
+
   function shownEvents(): Record<string, unknown>[] {
     return trackTelemetry.mock.calls
       .filter(([name, props]) => name === 'daemon_folder_access_notice' && props.action === 'shown')
@@ -267,9 +288,15 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     openSettingsTarget.mockReset()
     setSettingsSearchQuery.mockReset()
     platform.value = 'darwin'
-    vi.mocked(toast.warning).mockReset()
-    vi.mocked(toast.dismiss).mockReset()
-    useMacFolderAccessFixStore.setState({ open: false, mismatch: null })
+    vi.mocked(toast.warning).mockClear()
+    vi.mocked(toast.dismiss).mockClear()
+    useMacFolderAccessFixStore.setState({
+      open: false,
+      mismatch: null,
+      visibleScope: null,
+      dismissedScopes: new Set<string>()
+    })
+    onDismissById.clear()
     Object.defineProperty(window, 'api', {
       configurable: true,
       value: {
@@ -379,7 +406,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       ['other-home', 'workspace folder'],
       ['outside-home', 'workspace folder']
     ]) {
-      vi.mocked(toast.warning).mockReset()
+      vi.mocked(toast.warning).mockClear()
       macTccAttribution.mockResolvedValue({
         health: 'intact',
         folderAccessMismatch: {
@@ -502,6 +529,37 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(folderNoticeCalls()).toHaveLength(2)
     })
     expect(folderNoticeCalls()[1].title).toContain('Desktop folder')
+  })
+
+  // A takedown the user did not ask for reaches the same callback, and must not read as their X.
+  it('counts only the user’s own close as a dismissal', async () => {
+    macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: SCOPE_A })
+    render(<MacosTccPromptNoticeHost />)
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(1)
+    })
+
+    macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: null })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
+      expect(toast.dismiss).toHaveBeenCalledWith('mac-daemon-folder-access-mismatch')
+    })
+    expect(dismissedEvents()).toHaveLength(0)
+
+    macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: SCOPE_A })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(2)
+    })
+    act(() => {
+      folderNoticeCalls()[1].options.onDismiss?.()
+    })
+
+    expect(dismissedEvents()).toHaveLength(1)
   })
 
   it('raises both notices when attribution is severed and a folder is denied', async () => {
