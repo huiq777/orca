@@ -195,8 +195,8 @@ function FixFooter({
           </Button>
         )}
         <Button size="sm" onClick={onReset} disabled={busy}>
-          {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
-          {busy
+          {resetState === 'busy' ? <LoaderCircle className="size-4 animate-spin" /> : null}
+          {resetState === 'busy'
             ? translate('auto.components.shared.MacFolderAccessFixDialog.resetting', 'Resetting…')
             : translate(
                 'auto.components.shared.MacFolderAccessFixDialog.reset',
@@ -232,8 +232,8 @@ function FixFooter({
         </Button>
       )}
       <Button size="sm" onClick={onRestart} disabled={busy}>
-        {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
-        {busy
+        {restartState === 'busy' ? <LoaderCircle className="size-4 animate-spin" /> : null}
+        {restartState === 'busy'
           ? translate('auto.components.shared.MacFolderAccessFixDialog.restarting', 'Restarting…')
           : translate('auto.components.shared.MacFolderAccessFixDialog.restart', 'Restart')}
       </Button>

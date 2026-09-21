@@ -29,6 +29,17 @@ function noticePhase(): FolderAccessNoticePhase | undefined {
   return useMacFolderAccessFixStore.getState().noticePhaseByScope.get(SCOPE)
 }
 
+function verdict(
+  freshDaemonAccess: 'allowed' | 'denied' | 'unknown',
+  daemonScope: string = SCOPE
+): void {
+  act(() => {
+    useMacFolderAccessFixStore
+      .getState()
+      .applyVerdict({ daemonScope, cwdClass: 'documents', freshDaemonAccess })
+  })
+}
+
 function openWith(
   freshDaemonAccess: 'allowed' | 'denied' | 'unknown',
   cwdClass: 'documents' | 'other-home' | 'outside-home' = 'documents'
@@ -319,6 +330,29 @@ describe('MacFolderAccessFixDialog', () => {
       expect(dialogShown()).toBe(false)
     })
     expect(useMacFolderAccessFixStore.getState().mismatch).toBeNull()
+  })
+
+  // The footer flips to the restart branch the moment the grant lands, which can happen while the
+  // reset is still running. A button must report its own work, never the dialog's.
+  it('never labels the restart button with the reset that is running', async () => {
+    let release: (value: { outcome: string }) => void = () => {}
+    resetFolderAccess.mockReturnValue(
+      new Promise<{ outcome: string }>((resolve) => {
+        release = resolve
+      })
+    )
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+    await userEvent.click(resetButton())
+
+    verdict('allowed')
+
+    expect(restartButton().textContent).toBe('Restart')
+    expect(restartButton().hasAttribute('disabled')).toBe(true)
+
+    await act(async () => {
+      release({ outcome: 'unsupported' })
+    })
   })
 
   // The remedy belongs to one folder on one daemon, so evidence that moves is a different remedy.
