@@ -587,11 +587,12 @@ describe('pty:management IPC handlers', () => {
     // Why re-probe on the poll: the fix dialog's first step completes in System Settings, and
     // this is the only moment anything can notice that it landed.
     it.each([['denied'], ['unknown']])(
-      're-probes and re-reads while a fresh daemon reads %s',
+      'reports the verdict the re-probe leaves behind, not the %s one it started from',
       async (initial) => {
-        getDaemonFolderAccessMismatchMock
-          .mockReturnValueOnce(evidence(initial))
-          .mockReturnValue(evidence('allowed'))
+        getDaemonFolderAccessMismatchMock.mockReturnValue(evidence(initial))
+        refreshDaemonFolderAccessProbeMock.mockImplementation(async () => {
+          getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('allowed'))
+        })
 
         const result = await readAttribution()
 
@@ -600,20 +601,22 @@ describe('pty:management IPC handlers', () => {
       }
     )
 
-    it('does not re-probe once a fresh daemon is allowed', async () => {
+    // Whether a refresh is worth running is the refresh's own decision; the handler just reports
+    // whatever evidence is there afterwards.
+    it('reports a settled allowed verdict unchanged', async () => {
       getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('allowed'))
 
-      await readAttribution()
+      const result = await readAttribution()
 
-      expect(refreshDaemonFolderAccessProbeMock).not.toHaveBeenCalled()
+      expect(result.folderAccessMismatch).toEqual(evidence('allowed'))
     })
 
-    it('does not re-probe when there is no evidence at all', async () => {
+    it('reports no evidence at all as no mismatch', async () => {
       getDaemonFolderAccessMismatchMock.mockReturnValue(null)
 
-      await readAttribution()
+      const result = await readAttribution()
 
-      expect(refreshDaemonFolderAccessProbeMock).not.toHaveBeenCalled()
+      expect(result.folderAccessMismatch).toBeNull()
     })
 
     it('keeps the folder evidence when the refresh throws', async () => {

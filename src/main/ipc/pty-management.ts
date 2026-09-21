@@ -92,11 +92,8 @@ export function registerDaemonManagementHandlers(): void {
       )
       const identity = readCurrentDaemonIdentity()
       // Why re-probe on the poll: the fix dialog's first step completes in System Settings, and
-      // returning to Orca is the only moment anything can notice. A settled `allowed` is final.
-      const mismatch = getDaemonFolderAccessMismatch(identity)
-      if (mismatch && mismatch.freshDaemonAccess !== 'allowed') {
-        await refreshDaemonFolderAccessProbe(identity).catch(() => {})
-      }
+      // returning to Orca is the only moment anything can notice. The refresh owns when to skip.
+      await refreshDaemonFolderAccessProbe(identity).catch(() => {})
       return { health, folderAccessMismatch: getDaemonFolderAccessMismatch(identity) }
     }
   )
