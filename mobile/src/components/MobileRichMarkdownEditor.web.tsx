@@ -190,9 +190,9 @@ function MobileRichMarkdownEditorWebInner(
       pendingUrlRef.current = null
       live.dispose()
     }
-    // Mounted once: re-running this would throw away a live document and the caret in it, and
-    // every callback prop above changes identity on each render.
-    // oxlint-disable-next-line react-hooks/exhaustive-deps -- SAFETY: `promptForUrl` is a stable callback with no dependencies, and re-mounting the document is the thing this must not do.
+    // Mounted once, with `promptForUrl` read from the closure rather than named as a dependency:
+    // re-running this would throw away a live document and the caret in it, and every callback
+    // prop above changes identity on each render.
   }, [])
 
   return (
