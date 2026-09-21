@@ -2,16 +2,12 @@ import { createElement } from 'react'
 import { act, create, type ReactTestRenderer } from 'react-test-renderer'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-vi.mock('react-native', async () => {
-  const React = await import('react')
-  return {
-    Pressable: 'Pressable',
-    ScrollView: ({ children, ...props }: { children?: unknown }) =>
-      React.createElement('ScrollView', props, children),
-    StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
-    View: 'View'
-  }
-})
+vi.mock('react-native', () => ({
+  Pressable: 'Pressable',
+  ScrollView: 'ScrollView',
+  StyleSheet: { create: (styles: unknown) => styles, hairlineWidth: 1 },
+  View: 'View'
+}))
 
 vi.mock('lucide-react-native', () => ({
   Bold: 'Bold',
@@ -75,7 +71,7 @@ function render(editable: boolean, onCommand: (command: MobileRichMarkdownComman
   act(() => {
     renderer = create(createElement(MobileRichMarkdownToolbar, { editable, onCommand }))
   })
-  return renderer!.root.findAll((node) => node.type === 'Pressable')
+  return renderer!.root.findAll((node) => String(node.type) === 'Pressable')
 }
 
 describe('the rich Markdown toolbar', () => {
