@@ -159,6 +159,57 @@ describe('resetFolderAccessForDaemon runs the remedy', () => {
     expect(refreshProbeMock).toHaveBeenCalledWith(DAEMON, { force: true })
   })
 
+  // An unanswered TCC sheet blocks the read for as long as the user ignores it, and the dialog is
+  // modal and busy the whole time.
+  it('stops waiting on an unanswered prompt, and does not probe under the sheet', async () => {
+    const denied = {
+      daemonScope: 'aaaa111122223333',
+      cwdClass: 'documents',
+      freshDaemonAccess: 'denied'
+    }
+    opendirMock.mockReturnValue(new Promise<never>(() => {}))
+    getMismatchMock.mockReturnValue(denied)
+    vi.useFakeTimers()
+    try {
+      const pending = resetFolderAccessForDaemon(DAEMON)
+      await vi.advanceTimersByTimeAsync(0)
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(await pending).toEqual({ outcome: 'probed', mismatch: denied })
+      expect(refreshProbeMock).not.toHaveBeenCalled()
+      // Nothing probed the folder after the reset, so the outcome is not a verdict.
+      expect(trackMock).toHaveBeenCalledWith('daemon_folder_access_notice', {
+        action: 'reset_outcome_unknown',
+        cwd_class: 'documents'
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps waiting inside the deadline and probes once the prompt is answered', async () => {
+    let answer: () => void = () => {}
+    opendirMock.mockReturnValue(
+      new Promise((resolve) => {
+        answer = () => resolve(fakeDir())
+      })
+    )
+    vi.useFakeTimers()
+    try {
+      const pending = resetFolderAccessForDaemon(DAEMON)
+      await vi.advanceTimersByTimeAsync(59_000)
+      expect(refreshProbeMock).not.toHaveBeenCalled()
+
+      answer()
+      await vi.advanceTimersByTimeAsync(0)
+      await pending
+
+      expect(refreshProbeMock).toHaveBeenCalledWith(DAEMON, { force: true })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('closes the handle even when the read throws', async () => {
     const dir = fakeDir()
     dir.read.mockRejectedValue(new Error('EPERM'))

@@ -44,13 +44,10 @@ function runningAppBundlePath(): string {
   return resolve(dirname(app.getPath('exe')), '..', '..')
 }
 
-/**
- * Why the app reads the folder itself: TCC raises its prompt against the process that made the
- * syscall, so a daemon-side read would put the daemon on screen, or nothing at all. Async
- * throughout — the prompt blocks the calling syscall until the user answers it, and the sync
- * variant would take main's event loop down with it for the whole time the dialog is up.
- */
-async function promptByReadingFolder(path: string): Promise<void> {
+/** An unanswered macOS sheet must not keep the fix dialog busy for the rest of the session. */
+const PROMPT_DEADLINE_MS = 60_000
+
+async function readFolderOnce(path: string): Promise<void> {
   let dir: Dir | undefined
   try {
     dir = await opendir(path)
@@ -59,6 +56,29 @@ async function promptByReadingFolder(path: string): Promise<void> {
     // The verdict is the re-probe's job; this read exists only to raise the prompt.
   } finally {
     await dir?.close().catch(() => {})
+  }
+}
+
+/**
+ * Why the app reads the folder itself: TCC raises its prompt against the process that made the
+ * syscall, so a daemon-side read would put the daemon on screen, or nothing at all. Async
+ * throughout — the prompt blocks the calling syscall until the user answers it, and the sync
+ * variant would take main's event loop down with it for the whole time the dialog is up.
+ *
+ * Returns false once the deadline passes with the read still blocked, which means the sheet is up
+ * and unanswered. The read itself cannot be cancelled; it is simply no longer awaited.
+ */
+async function promptByReadingFolder(path: string): Promise<boolean> {
+  let deadline: NodeJS.Timeout | undefined
+  try {
+    return await Promise.race([
+      readFolderOnce(path).then(() => true),
+      new Promise<false>((resolve) => {
+        deadline = setTimeout(() => resolve(false), PROMPT_DEADLINE_MS)
+      })
+    ])
+  } finally {
+    clearTimeout(deadline)
   }
 }
 
@@ -72,13 +92,10 @@ const RESET_OUTCOME_ACTION = {
  * Emitted from main, not the renderer: nobody has verified this remedy on an affected machine, so
  * the verdict the re-probe returns is the only evidence the feature works.
  */
-function emitResetOutcome(
-  cwdClass: DaemonPtyCwdClass,
-  mismatch: DaemonFolderAccessMismatchNotice | null
-): void {
+function emitResetOutcome(cwdClass: DaemonPtyCwdClass, access: FreshDaemonAccess): void {
   try {
     track('daemon_folder_access_notice', {
-      action: RESET_OUTCOME_ACTION[mismatch?.freshDaemonAccess ?? 'unknown'],
+      action: RESET_OUTCOME_ACTION[access],
       cwd_class: cwdClass
     })
   } catch {
@@ -103,9 +120,16 @@ export async function resetFolderAccessForDaemon(
   if (!(await resetMacosTccPermission(TCC_SERVICE_BY_CWD_CLASS[target.cwdClass], bundleId)).ok) {
     return { outcome: 'reset_failed' }
   }
-  await promptByReadingFolder(target.canonicalPath)
-  await refreshDaemonFolderAccessProbe(identity, { force: true })
+  const prompted = await promptByReadingFolder(target.canonicalPath)
+  // Why no probe once the deadline passes: the sheet is still up, and a probe under it would read
+  // as denied — a verdict about the unanswered prompt, not about the permission.
+  if (prompted) {
+    await refreshDaemonFolderAccessProbe(identity, { force: true })
+  }
   const mismatch = getDaemonFolderAccessMismatch(identity)
-  emitResetOutcome(target.cwdClass, mismatch)
+  emitResetOutcome(
+    target.cwdClass,
+    prompted ? (mismatch?.freshDaemonAccess ?? 'unknown') : 'unknown'
+  )
   return { outcome: 'probed', mismatch }
 }
