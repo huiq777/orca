@@ -107,7 +107,39 @@ function ruleFor(source, selector) {
 }
 
 /**
- * What a `font-size` declaration is worth: a literal, a seam substitution, or something else.
+ * The `font-size` the cascade actually uses out of one rule.
+ *
+ * A rule may declare the property more than once, and CSS takes the last of equal importance, with
+ * `!important` outranking every declaration that is not. Reading the first one reported
+ * `font-size: 16px; font-size: 14px;` as compliant for a surface the browser renders at 14 px.
+ *
+ * The flag is stripped from the value it returns, so a compliant size that carries it is read as
+ * the size it sets rather than as a shape this walk does not model.
+ */
+function winningFontSize(declarations) {
+  const found = []
+  // Split on the separator rather than matching a value pattern: a size read from the seam is
+  // written `${TEXT_INPUT_FONT_SIZE}px`, whose own closing brace ends any value pattern that
+  // excludes one, and the last declaration in a rule need not carry a trailing semicolon.
+  for (const piece of declarations.split(';')) {
+    const match = /(?:^|[^\w-])font-size:\s*([\s\S]*)$/.exec(piece)
+    if (match === null) {
+      continue
+    }
+    const raw = match[1].trim()
+    found.push({
+      text: raw.replace(/\s*!\s*important$/i, '').trim(),
+      important: /!\s*important$/i.test(raw)
+    })
+  }
+  if (found.length === 0) {
+    return null
+  }
+  return found.findLast((one) => one.important) ?? found.at(-1)
+}
+
+/**
+ * What the winning `font-size` is worth: a literal, a seam substitution, or something else.
  *
  * Null for a rule that declares no size at all, which is unresolved rather than a pass: the value
  * an editable then takes comes from a rule this walk does not read — the host element's own, or the
@@ -116,11 +148,11 @@ function ruleFor(source, selector) {
  * prop; this is CSS, and the inherited value is genuinely out of view.
  */
 function readFontSize(mobileDir, source, declarations) {
-  const match = /font-size:\s*([^;]+);/.exec(declarations)
-  if (match === null) {
+  const winning = winningFontSize(declarations)
+  if (winning === null) {
     return null
   }
-  const text = match[1].trim()
+  const text = winning.text
   const literal = /^(\d+(?:\.\d+)?)px$/.exec(text)
   if (literal !== null) {
     return { text, onSeam: Number(literal[1]) >= textInputFontSizeFloor(mobileDir) }

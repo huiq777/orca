@@ -168,6 +168,40 @@ describe('the editable-host font-size rule', () => {
     ])
   })
 
+  it('reads the declaration CSS uses, not the first one in the rule', async () => {
+    // Equal importance, so the last one wins. A walk that stopped at the first read 16 px and
+    // called a 14 px surface compliant.
+    const { root, closure } = await fixture(
+      'repeated',
+      'export const MARKUP = \'<main id="editor" contenteditable="true"></main>\'\n',
+      'export function style() {\n  return `    #editor {\n      font-size: 16px;\n' +
+        '      font-size: 14px;\n    }`\n}\n'
+    )
+    expect(editableHostFontSizeOffenders(root, closure)).toEqual(['src/doc/style.ts:2'])
+  })
+
+  it('lets an important declaration outrank a later one, as the cascade does', async () => {
+    const important = await fixture(
+      'important-wins',
+      'export const MARKUP = \'<main id="editor" contenteditable="true"></main>\'\n',
+      'export function style() {\n  return `    #editor {\n      font-size: 18px !important;\n' +
+        '      font-size: 14px;\n    }`\n}\n'
+    )
+    expect(editableHostFontSizeOffenders(important.root, important.closure)).toEqual([])
+
+    // And an important declaration is still read as the size it sets, rather than as a shape the
+    // walk does not model: without stripping the flag, a compliant `!important` size on the seam
+    // would have been reported as an offender.
+    const offending = await fixture(
+      'important-offends',
+      'export const MARKUP = \'<main id="editor" contenteditable="true"></main>\'\n',
+      'export function style() {\n  return `    #editor {\n      font-size: 14px !important;\n    }`\n}\n'
+    )
+    expect(editableHostFontSizeOffenders(offending.root, offending.closure)).toEqual([
+      'src/doc/style.ts:2'
+    ])
+  })
+
   it('cannot judge an editable that declares no size, and says so', async () => {
     // Inheritance is not a pass here. The value would come from a rule in a file this walk does not
     // read — the host element's own, or the page's root — so "no declaration" is "cannot say" and
