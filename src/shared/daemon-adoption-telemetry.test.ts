@@ -105,7 +105,11 @@ describe('daemon_folder_access_notice schema', () => {
       'restart_clicked',
       'dismissed',
       'restart_outcome_fixed',
-      'restart_outcome_still_denied'
+      'restart_outcome_still_denied',
+      'reset_clicked',
+      'reset_outcome_allowed',
+      'reset_outcome_still_denied',
+      'reset_outcome_unknown'
     ]) {
       expect(eventSchemas.daemon_folder_access_notice.safeParse({ ...shown, action }).success).toBe(
         true

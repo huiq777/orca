@@ -155,8 +155,15 @@ export function clearDaemonFolderAccessMismatch(
  * settled `true` is final, and a probe younger than the interval is reused.
  */
 export async function refreshDaemonFolderAccessProbe(
-  identity: DaemonEndpointIdentity | null
+  identity: DaemonEndpointIdentity | null,
+  options?: { force?: boolean }
 ): Promise<void> {
+  const force = options?.force === true
+  // A probe started before the remedy ran cannot see its effect, and its late write would be
+  // discarded anyway; let it land, then probe whatever entry it leaves behind.
+  if (force && probeInFlight) {
+    await probeInFlight
+  }
   const entry = stored
   if (!identity || !entry || entry.daemonKey !== daemonKeyOf(identity)) {
     return
@@ -164,10 +171,27 @@ export async function refreshDaemonFolderAccessProbe(
   if (entry.restartWillHelp === true) {
     return
   }
-  if (entry.probedAtMs !== null && Date.now() - entry.probedAtMs < PROBE_REFRESH_INTERVAL_MS) {
+  if (
+    !force &&
+    entry.probedAtMs !== null &&
+    Date.now() - entry.probedAtMs < PROBE_REFRESH_INTERVAL_MS
+  ) {
     return
   }
-  await (probeInFlight ?? startProbe(entry))
+  await (force ? startProbe(entry) : (probeInFlight ?? startProbe(entry)))
+}
+
+/**
+ * The folder the stored evidence is about, for remedies that must act on it. Deliberately narrow:
+ * the canonical path is the one field the notice itself must never carry off the main process.
+ */
+export function getDaemonFolderAccessTarget(
+  identity: DaemonEndpointIdentity | null
+): { canonicalPath: string; cwdClass: DaemonPtyCwdClass } | null {
+  if (!identity || !stored || stored.daemonKey !== daemonKeyOf(identity)) {
+    return null
+  }
+  return { canonicalPath: stored.canonicalPath, cwdClass: stored.cwdClass }
 }
 
 /**

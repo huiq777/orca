@@ -96,7 +96,9 @@ export function createPtyApi(): NonNullable<Partial<PreloadApi>['pty']> {
       restart: () => Promise.resolve({ success: false }),
       // Why: web clients can't inspect the host daemon's pid record; 'unknown' keeps the banner hidden.
       macTccAttribution: () =>
-        Promise.resolve({ health: 'unknown' as const, folderAccessMismatch: null })
+        Promise.resolve({ health: 'unknown' as const, folderAccessMismatch: null }),
+      // Why: the TCC row belongs to the host's app bundle, which a web client cannot reach.
+      resetFolderAccess: () => Promise.resolve({ outcome: 'unsupported' as const })
     }
   }
 }

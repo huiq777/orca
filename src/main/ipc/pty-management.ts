@@ -13,6 +13,10 @@ import {
   refreshDaemonFolderAccessProbe,
   type DaemonFolderAccessMismatchNotice
 } from '../daemon/daemon-folder-access-mismatch'
+import {
+  resetFolderAccessForDaemon,
+  type DaemonFolderAccessResetResult
+} from '../daemon/daemon-folder-access-reset'
 import type { MacDaemonTccAttributionHealth } from '../daemon/daemon-tcc-attribution'
 import type { DaemonEndpointIdentity } from '../daemon/daemon-hello-protocol'
 import type { DaemonSessionInfo } from '../daemon/types'
@@ -71,6 +75,7 @@ export function registerDaemonManagementHandlers(): void {
   ipcMain.removeHandler('pty:management:killOne')
   ipcMain.removeHandler('pty:management:restart')
   ipcMain.removeHandler('pty:management:macTccAttribution')
+  ipcMain.removeHandler('pty:management:resetFolderAccess')
 
   // Why: lets Settings warn that macOS privacy grants no longer reach daemon terminals (STA-3491),
   // and carries the folder-access evidence the notice needs (STA-7948) on the same focus-time poll.
@@ -93,6 +98,19 @@ export function registerDaemonManagementHandlers(): void {
         return { health, folderAccessMismatch: mismatch }
       } catch {
         return { health: 'unknown', folderAccessMismatch: null }
+      }
+    }
+  )
+
+  // Why a separate channel from the poll: this one has a side effect — it clears Orca's TCC row and
+  // makes the app touch the folder so macOS re-prompts — and only a user click may trigger it.
+  ipcMain.handle(
+    'pty:management:resetFolderAccess',
+    async (): Promise<DaemonFolderAccessResetResult> => {
+      try {
+        return await resetFolderAccessForDaemon(readCurrentDaemonIdentity())
+      } catch {
+        return { outcome: 'unsupported' }
       }
     }
   )

@@ -89,7 +89,11 @@ export const daemonFolderAccessNoticeSchema = z
       'restart_clicked',
       'dismissed',
       'restart_outcome_fixed',
-      'restart_outcome_still_denied'
+      'restart_outcome_still_denied',
+      'reset_clicked',
+      'reset_outcome_allowed',
+      'reset_outcome_still_denied',
+      'reset_outcome_unknown'
     ]),
     cwd_class: z.enum(DAEMON_PTY_CWD_CLASSES)
   })

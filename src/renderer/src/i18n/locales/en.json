@@ -6416,7 +6416,12 @@
           "lead": "macOS is blocking Orca’s terminal service from this folder.",
           "done": "Done",
           "cancel": "Cancel",
-          "stepAllowUnknown": "Couldn’t verify. Skip if already allowed."
+          "stepAllowUnknown": "Couldn’t verify. Skip if already allowed.",
+          "stepAllowDenied": "macOS will ask you to allow Orca again.",
+          "reset": "Reset permission",
+          "resetting": "Resetting…",
+          "resetFailed": "Couldn’t reset the permission. Use System Settings instead.",
+          "resetStillBlocked": "Still blocked after the reset."
         },
         "macFolderAccessFolderName": {
           "documents": "Documents folder",

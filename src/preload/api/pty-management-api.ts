@@ -35,6 +35,14 @@ export type PtyManagementFolderAccessMismatch = {
   restartWillHelp: boolean | null
 }
 
+// Mirrors DaemonFolderAccessResetResult in src/main/daemon/daemon-folder-access-reset.ts.
+// 'unsupported': nothing to reset, or the platform/app bundle cannot support one.
+// 'reset_failed': tccutil refused. 'probed': the reset ran and `mismatch` is the fresh verdict.
+export type PtyManagementFolderAccessResetResult =
+  | { outcome: 'unsupported' }
+  | { outcome: 'reset_failed' }
+  | { outcome: 'probed'; mismatch: PtyManagementFolderAccessMismatch | null }
+
 export type PtyManagementApi = {
   // `degraded`: daemon is alive but can't spawn fresh PTYs, so new terminals run locally without daemon persistence.
   listSessions: () => Promise<{ sessions: PtyManagementSession[]; degraded: boolean }>
@@ -49,4 +57,5 @@ export type PtyManagementApi = {
     health: PtyManagementMacTccAttributionHealth
     folderAccessMismatch: PtyManagementFolderAccessMismatch | null
   }>
+  resetFolderAccess: () => Promise<PtyManagementFolderAccessResetResult>
 }

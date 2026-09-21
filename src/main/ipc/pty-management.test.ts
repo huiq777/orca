@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { DaemonSessionInfo } from '../daemon/types'
 
+// Mirrors DaemonFolderAccessResetResult; declared here so the mock is not typed by the module it
+// replaces.
+type FolderAccessResetResult = {
+  outcome: string
+  mismatch?: { daemonScope: string; cwdClass: string; restartWillHelp: boolean | null } | null
+}
+
 const {
   handleMock,
   removeHandlerMock,
@@ -8,7 +15,8 @@ const {
   restartDaemonMock,
   getCurrentDaemonMacTccAttributionHealthMock,
   getDaemonFolderAccessMismatchMock,
-  refreshDaemonFolderAccessProbeMock
+  refreshDaemonFolderAccessProbeMock,
+  resetFolderAccessForDaemonMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   removeHandlerMock: vi.fn(),
@@ -18,7 +26,10 @@ const {
   getDaemonFolderAccessMismatchMock: vi.fn<
     () => { daemonScope: string; cwdClass: string; restartWillHelp: boolean | null } | null
   >(() => null),
-  refreshDaemonFolderAccessProbeMock: vi.fn(async () => {})
+  refreshDaemonFolderAccessProbeMock: vi.fn(async () => {}),
+  resetFolderAccessForDaemonMock: vi.fn<() => Promise<FolderAccessResetResult>>(async () => ({
+    outcome: 'unsupported'
+  }))
 }))
 
 vi.mock('electron', () => ({
@@ -28,6 +39,10 @@ vi.mock('electron', () => ({
 vi.mock('../daemon/daemon-folder-access-mismatch', () => ({
   getDaemonFolderAccessMismatch: getDaemonFolderAccessMismatchMock,
   refreshDaemonFolderAccessProbe: refreshDaemonFolderAccessProbeMock
+}))
+
+vi.mock('../daemon/daemon-folder-access-reset', () => ({
+  resetFolderAccessForDaemon: resetFolderAccessForDaemonMock
 }))
 
 vi.mock('../daemon/daemon-init', () => ({
@@ -180,6 +195,7 @@ describe('pty:management IPC handlers', () => {
     getCurrentDaemonMacTccAttributionHealthMock.mockResolvedValue('unknown')
     getDaemonFolderAccessMismatchMock.mockReset().mockReturnValue(null)
     refreshDaemonFolderAccessProbeMock.mockReset().mockResolvedValue(undefined)
+    resetFolderAccessForDaemonMock.mockReset().mockResolvedValue({ outcome: 'unsupported' })
   })
 
   afterEach(() => {
@@ -643,6 +659,50 @@ describe('pty:management IPC handlers', () => {
       consoleErrorSpy.mockRestore()
 
       expect(result.success).toBe(false)
+    })
+  })
+
+  describe('resetFolderAccess', () => {
+    async function runReset(): Promise<FolderAccessResetResult> {
+      const { registerDaemonManagementHandlers } = await importFresh()
+      registerDaemonManagementHandlers()
+      const handlers = buildHandlerMap()
+      // oxlint-disable-next-line typescript/consistent-type-assertions -- SAFETY: the handler map is untyped by construction; this channel's handler is the one registered above.
+      return (await handlers['pty:management:resetFolderAccess']({})) as FolderAccessResetResult
+    }
+
+    it('hands the current daemon to the reset and returns its verdict', async () => {
+      const current = makeAdapter(5, [])
+      getDaemonProviderMock.mockReturnValue(await makeRouter(current, [makeAdapter(4, [])]))
+      resetFolderAccessForDaemonMock.mockResolvedValue({
+        outcome: 'probed',
+        mismatch: { daemonScope: 'abc123def4567890', cwdClass: 'documents', restartWillHelp: true }
+      })
+
+      expect(await runReset()).toEqual({
+        outcome: 'probed',
+        mismatch: { daemonScope: 'abc123def4567890', cwdClass: 'documents', restartWillHelp: true }
+      })
+      // Why the current adapter: a legacy daemon's denial is not the one the user is looking at.
+      expect(resetFolderAccessForDaemonMock).toHaveBeenCalledWith({
+        pid: 1530,
+        startedAtMs: 1_700_000,
+        launchNonce: 'n1'
+      })
+    })
+
+    it('reports unsupported rather than rejecting when the reset throws', async () => {
+      resetFolderAccessForDaemonMock.mockRejectedValue(new Error('no app bundle'))
+
+      expect(await runReset()).toEqual({ outcome: 'unsupported' })
+    })
+
+    it('registers the channel exactly once per registration', async () => {
+      const { registerDaemonManagementHandlers } = await importFresh()
+      registerDaemonManagementHandlers()
+
+      expect(removeHandlerMock).toHaveBeenCalledWith('pty:management:resetFolderAccess')
+      expect(buildHandlerMap()['pty:management:resetFolderAccess']).toBeTypeOf('function')
     })
   })
 })

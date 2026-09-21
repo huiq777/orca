@@ -4,10 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 
-const { trackTelemetry, restart, openSettings } = vi.hoisted(() => ({
+const { trackTelemetry, restart, openSettings, resetFolderAccess } = vi.hoisted(() => ({
   trackTelemetry: vi.fn(),
   restart: vi.fn(async () => ({ success: true })),
-  openSettings: vi.fn(async () => {})
+  openSettings: vi.fn(async () => {}),
+  resetFolderAccess: vi.fn()
 }))
 
 vi.mock('@/lib/telemetry', () => ({ track: trackTelemetry }))
@@ -30,6 +31,18 @@ function restartButton(): HTMLElement {
   return screen.getByRole('button', { name: /^Restart/ })
 }
 
+function resetButton(): HTMLElement {
+  return screen.getByRole('button', { name: /^Reset/ })
+}
+
+/** The verdict a forced re-probe returned after the reset ran. */
+function probed(restartWillHelp: boolean | null): void {
+  resetFolderAccess.mockResolvedValue({
+    outcome: 'probed',
+    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', restartWillHelp }
+  })
+}
+
 function footerButton(name: string): HTMLElement {
   const footer = screen.getByRole('dialog').querySelector('[data-slot="dialog-footer"]')
   if (!(footer instanceof HTMLElement)) {
@@ -42,11 +55,13 @@ beforeEach(() => {
   trackTelemetry.mockReset()
   restart.mockReset().mockResolvedValue({ success: true })
   openSettings.mockReset().mockResolvedValue(undefined)
+  resetFolderAccess.mockReset()
+  probed(false)
   useMacFolderAccessFixStore.setState({ open: false, mismatch: null, restartedScope: null })
   Object.defineProperty(window, 'api', {
     configurable: true,
     value: {
-      pty: { management: { restart } },
+      pty: { management: { restart, resetFolderAccess } },
       developerPermissions: { openSettings }
     }
   })
@@ -82,12 +97,14 @@ describe('MacFolderAccessFixDialog', () => {
     expect(restartButton().hasAttribute('disabled')).toBe(false)
   })
 
-  it('makes System Settings the only action when Orca itself is denied', () => {
+  it('offers the reset and System Settings when a fresh daemon is still denied', () => {
     openWith(false)
     render(<MacFolderAccessFixDialog />)
 
     expect(footerButton('Open System Settings')).toBeTruthy()
+    expect(footerButton('Reset permission')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
+    expect(screen.getByText('macOS will ask you to allow Orca again.')).toBeTruthy()
   })
 
   // An unanswered probe must not accuse the user of a missing grant, but the pane stays reachable.
@@ -206,6 +223,105 @@ describe('MacFolderAccessFixDialog', () => {
       ).toBeTruthy()
     })
     expect(restartButton().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('reports the reset click and flips to Restart once the re-probe allows it', async () => {
+    probed(true)
+    openWith(false)
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    await waitFor(() => {
+      expect(restartButton()).toBeTruthy()
+    })
+    expect(resetFolderAccess).toHaveBeenCalledTimes(1)
+    expect(trackTelemetry).toHaveBeenCalledWith('daemon_folder_access_notice', {
+      action: 'reset_clicked',
+      cwd_class: 'documents'
+    })
+    expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+  })
+
+  it('says so when the re-probe still reports a denial', async () => {
+    probed(false)
+    openWith(false)
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    await waitFor(() => {
+      expect(screen.getByText('Still blocked after the reset.')).toBeTruthy()
+    })
+    expect(footerButton('Reset permission').hasAttribute('disabled')).toBe(false)
+  })
+
+  // An unanswered re-probe is not evidence the reset worked, so the line stays up.
+  it('keeps the still-blocked line when the reset returns no verdict', async () => {
+    resetFolderAccess.mockResolvedValue({ outcome: 'probed', mismatch: null })
+    openWith(false)
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    await waitFor(() => {
+      expect(screen.getByText('Still blocked after the reset.')).toBeTruthy()
+    })
+  })
+
+  it.each([['reset_failed'], ['unsupported']])(
+    'points at System Settings when the reset comes back %s',
+    async (outcome) => {
+      resetFolderAccess.mockResolvedValue({ outcome })
+      openWith(false)
+      render(<MacFolderAccessFixDialog />)
+
+      await userEvent.click(resetButton())
+
+      await waitFor(() => {
+        expect(
+          screen.getByText('Couldn’t reset the permission. Use System Settings instead.')
+        ).toBeTruthy()
+      })
+      expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+    }
+  )
+
+  it('reports a rejected reset the same way', async () => {
+    resetFolderAccess.mockRejectedValue(new Error('ipc gone'))
+    openWith(false)
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    await waitFor(() => {
+      expect(
+        screen.getByText('Couldn’t reset the permission. Use System Settings instead.')
+      ).toBeTruthy()
+    })
+  })
+
+  it('blocks every way out while the reset runs', async () => {
+    let release: (value: { outcome: string }) => void = () => {}
+    resetFolderAccess.mockReturnValue(
+      new Promise<{ outcome: string }>((resolve) => {
+        release = resolve
+      })
+    )
+    openWith(false)
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    expect(screen.getByRole('button', { name: /Resetting/ }).hasAttribute('disabled')).toBe(true)
+    expect(footerButton('Open System Settings').hasAttribute('disabled')).toBe(true)
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+    await userEvent.keyboard('{Escape}')
+    expect(useMacFolderAccessFixStore.getState().open).toBe(true)
+
+    await act(async () => {
+      release({ outcome: 'unsupported' })
+    })
   })
 
   it('closes on Cancel', async () => {

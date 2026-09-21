@@ -19,6 +19,8 @@ import { macFolderAccessFolderName } from './mac-folder-access-folder-name'
 const FILES_AND_FOLDERS_PANE = { id: 'files-and-folders' } as const
 
 type RestartState = 'idle' | 'busy' | 'done' | 'failed'
+/** 'probed': the reset ran and a fresh probe answered; the verdict itself is on the mismatch. */
+type ResetState = 'idle' | 'busy' | 'probed' | 'failed'
 
 function Step({
   done,
@@ -44,8 +46,6 @@ function Step({
   )
 }
 
-// No instruction for a toggle that is already on: nothing has been verified to fix that case yet
-// (STA-7948), so the step claims only what the probe knows.
 function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | undefined {
   // A probe that could not answer must not accuse the user of a missing grant.
   if (mismatch.restartWillHelp === null) {
@@ -54,15 +54,25 @@ function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | 
       'Couldn’t verify. Skip if already allowed.'
     )
   }
+  // The toggle is already on for everyone who sees this, so the step is about the re-prompt the
+  // reset provokes, not about finding a switch (STA-7948).
+  if (mismatch.restartWillHelp === false) {
+    return translate(
+      'auto.components.shared.MacFolderAccessFixDialog.stepAllowDenied',
+      'macOS will ask you to allow Orca again.'
+    )
+  }
   return undefined
 }
 
 function FixSteps({
   mismatch,
-  restartState
+  restartState,
+  resetState
 }: {
   mismatch: PtyManagementFolderAccessMismatch
   restartState: RestartState
+  resetState: ResetState
 }): React.JSX.Element {
   return (
     <>
@@ -95,6 +105,22 @@ function FixSteps({
           )}
         </p>
       ) : null}
+      {resetState === 'failed' ? (
+        <p className="text-sm text-destructive">
+          {translate(
+            'auto.components.shared.MacFolderAccessFixDialog.resetFailed',
+            'Couldn’t reset the permission. Use System Settings instead.'
+          )}
+        </p>
+      ) : null}
+      {resetState === 'probed' && mismatch.restartWillHelp !== true ? (
+        <p className="text-sm text-muted-foreground">
+          {translate(
+            'auto.components.shared.MacFolderAccessFixDialog.resetStillBlocked',
+            'Still blocked after the reset.'
+          )}
+        </p>
+      ) : null}
     </>
   )
 }
@@ -103,17 +129,21 @@ function FixSteps({
 function FixFooter({
   mismatch,
   restartState,
+  resetState,
   onCancel,
   onOpenSettings,
+  onReset,
   onRestart
 }: {
   mismatch: PtyManagementFolderAccessMismatch
   restartState: RestartState
+  resetState: ResetState
   onCancel: () => void
   onOpenSettings: () => void
+  onReset: () => void
   onRestart: () => void
 }): React.JSX.Element {
-  const busy = restartState === 'busy'
+  const busy = restartState === 'busy' || resetState === 'busy'
   const openSettingsLabel = translate(
     'auto.components.shared.MacFolderAccessFixDialog.openSystemSettings',
     'Open System Settings'
@@ -125,14 +155,22 @@ function FixFooter({
       </Button>
     )
   }
+  // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot and
+  // System Settings stays as the manual route.
   if (mismatch.restartWillHelp === false) {
     return (
       <>
-        <Button variant="ghost" size="sm" onClick={onCancel}>
-          {translate('auto.components.shared.MacFolderAccessFixDialog.cancel', 'Cancel')}
-        </Button>
-        <Button size="sm" onClick={onOpenSettings}>
+        <Button variant="ghost" size="sm" onClick={onOpenSettings} disabled={busy}>
           {openSettingsLabel}
+        </Button>
+        <Button size="sm" onClick={onReset} disabled={busy}>
+          {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
+          {busy
+            ? translate('auto.components.shared.MacFolderAccessFixDialog.resetting', 'Resetting…')
+            : translate(
+                'auto.components.shared.MacFolderAccessFixDialog.reset',
+                'Reset permission'
+              )}
         </Button>
       </>
     )
@@ -168,7 +206,9 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
   const mismatch = useMacFolderAccessFixStore((s) => s.mismatch)
   const close = useMacFolderAccessFixStore((s) => s.close)
   const markRestarted = useMacFolderAccessFixStore((s) => s.markRestarted)
+  const observeMismatch = useMacFolderAccessFixStore((s) => s.observeMismatch)
   const [restartState, setRestartState] = useState<RestartState>('idle')
+  const [resetState, setResetState] = useState<ResetState>('idle')
   const mountedRef = useMountedRef()
   const cwdClass = mismatch?.cwdClass ?? null
 
@@ -178,6 +218,31 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
     }
     void window.api?.developerPermissions?.openSettings(FILES_AND_FOLDERS_PANE)
   }, [cwdClass])
+
+  const onReset = useCallback(async (): Promise<void> => {
+    if (cwdClass) {
+      track('daemon_folder_access_notice', { action: 'reset_clicked', cwd_class: cwdClass })
+    }
+    setResetState('busy')
+    try {
+      const result = await window.api.pty.management.resetFolderAccess()
+      if (!mountedRef.current) {
+        return
+      }
+      if (result.outcome !== 'probed') {
+        setResetState('failed')
+        return
+      }
+      setResetState('probed')
+      // Why through the store: the fresh verdict is what decides the next step, and a null one
+      // leaves the dialog on the verdict it already had.
+      observeMismatch(result.mismatch)
+    } catch {
+      if (mountedRef.current) {
+        setResetState('failed')
+      }
+    }
+  }, [cwdClass, mountedRef, observeMismatch])
 
   const onRestart = useCallback(async (): Promise<void> => {
     if (cwdClass) {
@@ -206,7 +271,7 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
     return null
   }
   const folder = macFolderAccessFolderName(mismatch.cwdClass)
-  const busy = restartState === 'busy'
+  const busy = restartState === 'busy' || resetState === 'busy'
   return (
     <Dialog
       open={open}
@@ -245,13 +310,15 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
             )}
           </DialogDescription>
         </DialogHeader>
-        <FixSteps mismatch={mismatch} restartState={restartState} />
+        <FixSteps mismatch={mismatch} restartState={restartState} resetState={resetState} />
         <DialogFooter>
           <FixFooter
             mismatch={mismatch}
             restartState={restartState}
+            resetState={resetState}
             onCancel={close}
             onOpenSettings={onOpenSettings}
+            onReset={() => void onReset()}
             onRestart={() => void onRestart()}
           />
         </DialogFooter>

@@ -15,6 +15,7 @@ import type { DaemonEndpointIdentity } from './daemon-hello-protocol'
 import {
   clearDaemonFolderAccessMismatch,
   getDaemonFolderAccessMismatch,
+  getDaemonFolderAccessTarget,
   recordDaemonFolderAccessMismatch,
   refreshDaemonFolderAccessProbe,
   resetDaemonFolderAccessMismatchForTests
@@ -280,6 +281,83 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
     expect(probeMock).toHaveBeenCalledTimes(1)
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+  })
+
+  // The reset's caller needs a verdict from after the reset, and the interval is what would
+  // otherwise hand it the pre-reset one.
+  it('probes again inside the refresh interval when forced', async () => {
+    probeMock.mockResolvedValue('denied')
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    await settleProbe()
+    probeMock.mockResolvedValue('ok')
+
+    await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
+
+    expect(probeMock).toHaveBeenCalledTimes(2)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+  })
+
+  // A probe that started before the reset would otherwise win the race and discard the forced
+  // one's write, reporting the state the reset was meant to change.
+  it('waits for an older in-flight probe and still lands its own verdict', async () => {
+    const releases: ((value: string) => void)[] = []
+    probeMock.mockImplementation(
+      () =>
+        new Promise<string>((resolve) => {
+          releases.push(resolve)
+        })
+    )
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    await settleProbe()
+
+    const forced = refreshDaemonFolderAccessProbe(DAEMON, { force: true })
+    releases[0]('denied')
+    await settleProbe()
+    releases[1]('ok')
+    await forced
+
+    expect(probeMock).toHaveBeenCalledTimes(2)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+  })
+
+  it('keeps a settled true final even under force', async () => {
+    probeMock.mockResolvedValue('ok')
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    await settleProbe()
+
+    await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
+
+    expect(probeMock).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('getDaemonFolderAccessTarget', () => {
+  it('hands the remedy the folder the evidence is about', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+
+    expect(getDaemonFolderAccessTarget(DAEMON)).toEqual({
+      canonicalPath: DOCUMENTS,
+      cwdClass: 'documents'
+    })
+  })
+
+  it('has no target for another daemon, no daemon, or no evidence', () => {
+    expect(getDaemonFolderAccessTarget(DAEMON)).toBeNull()
+
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+
+    expect(getDaemonFolderAccessTarget(RESTARTED)).toBeNull()
+    expect(getDaemonFolderAccessTarget(null)).toBeNull()
+  })
+
+  // Reading the target must not be what makes the notice count as shown.
+  it('does not emit the shown event', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    trackMock.mockReset()
+
+    getDaemonFolderAccessTarget(DAEMON)
+
+    expect(trackMock).not.toHaveBeenCalled()
   })
 })
 
