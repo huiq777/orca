@@ -1,3 +1,5 @@
+import type { DaemonPtyCwdClass } from '../../shared/daemon-adoption-telemetry'
+
 // Mirror of daemon's `DaemonSessionInfo` (src/main/daemon/types.ts); not imported — preload can't depend on main-only protocol types.
 export type PtyManagementSession = {
   sessionId: string
@@ -16,14 +18,7 @@ export type PtyManagementSession = {
 // Automation grants silently stop applying until the daemon is restarted (STA-3491).
 export type PtyManagementMacTccAttributionHealth = 'intact' | 'severed' | 'unknown'
 
-// Mirrors DAEMON_PTY_CWD_CLASSES in src/shared/daemon-adoption-telemetry.ts; declared literally
-// because preload can't depend on main-only modules.
-export type PtyManagementDaemonCwdClass =
-  | 'documents'
-  | 'desktop'
-  | 'downloads'
-  | 'other-home'
-  | 'outside-home'
+export type PtyManagementDaemonCwdClass = DaemonPtyCwdClass
 
 // The daemon spawned a terminal into a folder it can't read while Orca can (STA-7948).
 // `daemonScope` is an opaque per-daemon digest, never a path — it only latches the notice.
