@@ -182,9 +182,10 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * `src/mobile-web-shell/bridge/bridge-audio-verbs.ts` — and eight vendored ones leave, because the
  * capture seam is what stops the page importing a microphone it does not have. Five are
  * `@orca/expo-two-way-audio` (its web module, `core`, `events`, `hooks` and the index) and three
- * are `expo-keep-awake`; the page asks the shell for both over `native.audio.start|read|stop` and
- * `native.wakelock.set` instead. The native halves of the seam resolve out of this closure
- * entirely, which is the -8 + 3.
+ * are `expo-keep-awake`; the page asks the shell for the microphone over
+ * `native.audio.start|read|stop` instead, and never asks about the screen at all — an open mic
+ * holds it on the device side. The native halves of the seam resolve out of this closure entirely,
+ * which is the -8 + 3.
  *
  * Measured, not derived: `mobile-web-app-session-dictation-capture.test.mjs` moves the web file
  * aside and walks the closure again, which puts those eight back.
@@ -244,8 +245,29 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * 76 the chunk fence allows for 15 routes) and neither does the entry's static closure
  * (1,612,052 bytes against a 3 MiB bound): the editor is code the session route already reached
  * for, not a new chunk boundary.
+ *
+ * Main's own paragraph for the same pin, kept because the two provenances are independent: ruling
+ * 36 gave the screen to the microphone and two local modules left,
+ * `src/hooks/mobile-dictation-keep-awake.ts` and
+ * `src/hooks/mobile-dictation-foreground-keep-awake.ts`, the page's wake-tag owner and its Android
+ * foreground re-acquire. Both are deleted rather than moved — the device module that opens the
+ * microphone takes the screen and gives it back — so the page has nothing left to own.
+ *
+ *   modules        4333 -> 4331   (-2)
+ *   local modules   991 ->  989   (-2)
+ *
+ * The merge of the two is measured rather than summed, which is what this reading keeps having to
+ * do: 4,360 on this branch and 4,331 on main are two changes to one list, and their arithmetic
+ * (4,358) is a guess about modules neither side counted. Measured on the merged head with every
+ * generator run first:
+ *
+ *   modules        4331 -> 4358   (+27)
+ *   local modules   989 -> 1016   (+27)
+ *
+ * and the two local lists diffed against main's, which names the difference as exactly the 27 the
+ * editor brings, with the dictation pair already gone from both sides.
  */
-const SESSION_ROUTE_MODULES = 4360
+const SESSION_ROUTE_MODULES = 4358
 
 /** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
 const ROUTE_ENTRY = [
