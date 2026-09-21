@@ -19,9 +19,17 @@ import { textInputFontSizeFloor } from './mobile-web-app-text-input-font-size-se
 /** The seam's export, which is how a size states the floor rather than restating the number. */
 const SEAM_EXPORT = 'TEXT_INPUT_FONT_SIZE'
 
-/** `contenteditable="true"` in a markup string, with the id the element carries. */
-const EDITABLE_MARKUP =
-  /id="([A-Za-z][\w-]*)"[^>]*contenteditable="true"|contenteditable="true"[^>]*id="([A-Za-z][\w-]*)"/g
+/**
+ * Each editable tag in a markup string, whole.
+ *
+ * The tag is what an editable *is*; its id is optional and is read out of the tag afterwards. A
+ * pattern that started from the id matched only the hosts that have one, so a file holding a named
+ * host and an anonymous one reported the named host and said nothing about the other.
+ */
+const EDITABLE_TAG = /<[A-Za-z][^>]*\bcontenteditable="true"[^>]*>/g
+
+/** The id a matched tag carries, or null for one that carries none. */
+const TAG_ID = /\bid="([A-Za-z][\w-]*)"/
 
 function readOrNull(path) {
   try {
@@ -32,11 +40,12 @@ function readOrNull(path) {
 }
 
 /**
- * Every editable host a closure declares, as `{ file, id }`.
+ * Every editable host a closure declares, as `{ file, id }`, one entry per tag.
  *
  * The completeness half of the verdict below: an empty offender list is only evidence when the
- * walk found the editables it is judging. A module that plants an editable with no id lands here
- * with `id: null` and is reported as unresolved rather than passing.
+ * walk found the editables it is judging. A host with no id lands here with `id: null` and is
+ * reported as unresolved rather than passing, and it does so whether or not a named host sits
+ * beside it in the same file.
  */
 export function editableHostsIn(mobileDir, closure) {
   const found = []
@@ -45,13 +54,8 @@ export function editableHostsIn(mobileDir, closure) {
     if (source === null || !source.includes('contenteditable="true"')) {
       continue
     }
-    const ids = [...source.matchAll(EDITABLE_MARKUP)].map((match) => match[1] ?? match[2] ?? null)
-    if (ids.length === 0) {
-      found.push({ file, id: null })
-      continue
-    }
-    for (const id of ids) {
-      found.push({ file, id })
+    for (const [tag] of source.matchAll(EDITABLE_TAG)) {
+      found.push({ file, id: TAG_ID.exec(tag)?.[1] ?? null })
     }
   }
   return found.sort((left, right) =>
@@ -102,12 +106,19 @@ function ruleFor(source, selector) {
   return null
 }
 
-/** What a `font-size` declaration is worth: a literal, a seam substitution, or something else. */
+/**
+ * What a `font-size` declaration is worth: a literal, a seam substitution, or something else.
+ *
+ * Null for a rule that declares no size at all, which is unresolved rather than a pass: the value
+ * an editable then takes comes from a rule this walk does not read — the host element's own, or the
+ * page's root — so it can be 14 px and the census cannot prove otherwise. Where the `TextInput`
+ * half treats an absent prop as inheritance and lets it through, that policy is main's and about a
+ * prop; this is CSS, and the inherited value is genuinely out of view.
+ */
 function readFontSize(mobileDir, source, declarations) {
   const match = /font-size:\s*([^;]+);/.exec(declarations)
   if (match === null) {
-    // No size of its own, so it inherits, and the floor is about the size an editable declares.
-    return { text: null, onSeam: true }
+    return null
   }
   const text = match[1].trim()
   const literal = /^(\d+(?:\.\d+)?)px$/.exec(text)
@@ -130,9 +141,9 @@ function readFontSize(mobileDir, source, declarations) {
 /**
  * Where each editable host's size is declared, as `{ at, size }`.
  *
- * The size is looked for in the same module the markup came from and in the modules beside it: a
- * document's markup and its stylesheet are two exports of one program, so the rule is stated over
- * that program's own directory rather than over the whole closure.
+ * The size is looked for in the same module the markup came from and in the modules directly beside
+ * it: a document's markup and its stylesheet are two exports of one program, so the rule is stated
+ * over that program's own directory rather than over the whole closure or over its subtree.
  */
 function editableHostSizes(mobileDir, closure) {
   const resolutions = []
@@ -142,7 +153,12 @@ function editableHostSizes(mobileDir, closure) {
       continue
     }
     const directory = host.file.slice(0, host.file.lastIndexOf('/'))
-    const siblings = closure.local.filter((file) => file.startsWith(`${directory}/`))
+    // The immediate directory, not the subtree: the walk stops at the first file whose sheet opens
+    // the host's selector, and the closure's order is the bundler's rather than alphabetical, so a
+    // sheet one directory down could answer for the sibling the host actually gets.
+    const siblings = closure.local.filter(
+      (file) => file.slice(0, file.lastIndexOf('/')) === directory
+    )
     let resolved = null
     for (const file of siblings) {
       const source = readOrNull(join(mobileDir, file))

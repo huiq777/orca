@@ -44,6 +44,19 @@ async function fixture(name, markup, style) {
   return { root, closure: { local: ['src/doc/markup.ts', 'src/doc/style.ts'] } }
 }
 
+/** The same tree with a second stylesheet one directory down, and a closure that reads it first. */
+async function fixtureWithNested(name, markup, style, nestedStyle) {
+  const { root } = await fixture(name, markup, style)
+  await mkdir(join(root, 'src/doc/nested'), { recursive: true })
+  await writeFile(join(root, 'src/doc/nested/style.ts'), nestedStyle, 'utf8')
+  return {
+    root,
+    // Nested first, which is what makes this a measurement: the closure's order is the bundler's,
+    // so a walk that accepted any file under the directory would stop here.
+    closure: { local: ['src/doc/nested/style.ts', 'src/doc/markup.ts', 'src/doc/style.ts'] }
+  }
+}
+
 beforeAll(async () => {
   fixtureDir = await mkdtemp(join(tmpdir(), 'orca-editable-host-'))
 })
@@ -106,6 +119,36 @@ describe('the editable-host font-size rule', () => {
     expect(editableHostFontSizeOffenders(root, closure)).toEqual(['src/doc/style.ts:3'])
   })
 
+  it('counts a no-id editable beside a named one, rather than only the named one', async () => {
+    // The tag is what an editable is, and its id is optional: a walk that started from the id
+    // matched the named host and never saw the one beside it, so a file holding both reported the
+    // named one as clean and said nothing at all about the other.
+    const { root, closure } = await fixture(
+      'mixed',
+      'export const NAMED = \'<main id="editor" contenteditable="true"></main>\'\n' +
+        'export const ANONYMOUS = \'<section contenteditable="true"></section>\'\n',
+      'export function style() {\n  return `    #editor {\n      font-size: 18px;\n    }`\n}\n'
+    )
+    expect(editableHostsIn(root, closure)).toEqual([
+      { file: 'src/doc/markup.ts', id: 'editor' },
+      { file: 'src/doc/markup.ts', id: null }
+    ])
+    expect(unresolvedEditableHostStyles(root, closure)).toEqual(['src/doc/markup.ts'])
+  })
+
+  it('reads the sheet beside the markup, not one a directory down', async () => {
+    // The walk stops at the first file whose sheet opens `#editor`, and the closure's order is the
+    // bundler's rather than alphabetical, so a nested sheet could answer for a sibling that is the
+    // one the host actually gets.
+    const { root, closure } = await fixtureWithNested(
+      'nested',
+      'export const MARKUP = \'<main id="editor" contenteditable="true"></main>\'\n',
+      'export function style() {\n  return `    #editor {\n      font-size: 14px;\n    }`\n}\n',
+      'export function nested() {\n  return `    #editor {\n      font-size: 18px;\n    }`\n}\n'
+    )
+    expect(editableHostFontSizeOffenders(root, closure)).toEqual(['src/doc/style.ts:2'])
+  })
+
   it('reports an editable it cannot judge rather than passing it', async () => {
     const noId = await fixture(
       'no-id',
@@ -125,13 +168,17 @@ describe('the editable-host font-size rule', () => {
     ])
   })
 
-  it('passes an editable that declares no size, because it inherits one', async () => {
+  it('cannot judge an editable that declares no size, and says so', async () => {
+    // Inheritance is not a pass here. The value would come from a rule in a file this walk does not
+    // read — the host element's own, or the page's root — so "no declaration" is "cannot say" and
+    // belongs in the unresolved list, which the closure census holds at empty.
     const { root, closure } = await fixture(
       'inherits',
       'export const MARKUP = \'<main id="editor" contenteditable="true"></main>\'\n',
       'export function style() {\n  return `    #editor {\n      padding: 8px;\n    }`\n}\n'
     )
+    expect(unresolvedEditableHostStyles(root, closure)).toEqual(['src/doc/style.ts:2'])
+    // Not an offender either: an offender is a size this walk read and found under the floor.
     expect(editableHostFontSizeOffenders(root, closure)).toEqual([])
-    expect(unresolvedEditableHostStyles(root, closure)).toEqual([])
   })
 })
