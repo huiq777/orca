@@ -146,7 +146,10 @@ export function useMacTccAttributionSeveredNotice(): void {
           duration: Infinity,
           action: {
             label: translate('auto.hooks.useMacTccAttributionSeveredNotice.folderAccessFix', 'Fix'),
-            onClick: () => {
+            onClick: (event) => {
+              // Sonner deletes the toast after an action click, silently: the evidence is still
+              // true until a restart, so the toast has to survive the dialog being cancelled.
+              event.preventDefault()
               track('daemon_folder_access_notice', { action: 'fix_opened', cwd_class: cwdClass })
               // No captured verdict: the dialog opens on whatever the latest poll reported.
               openFix()

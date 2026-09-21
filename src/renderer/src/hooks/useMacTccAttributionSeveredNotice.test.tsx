@@ -253,7 +253,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     id?: string
     description?: string
     duration?: number
-    action?: { label?: string; onClick?: () => void }
+    action?: { label?: string; onClick?: (event: { preventDefault: () => void }) => void }
     cancel?: { label?: string; onClick?: () => void }
     onDismiss?: () => void
   }
@@ -274,6 +274,15 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     return trackTelemetry.mock.calls
       .filter(([name, props]) => name === 'daemon_folder_access_notice' && props.action === 'shown')
       .map(([, props]) => props)
+  }
+
+  /** Sonner hands the action a real event and deletes the toast unless the handler prevents it. */
+  function clickFix(index = 0): { preventDefault: ReturnType<typeof vi.fn> } {
+    const event = { preventDefault: vi.fn() }
+    act(() => {
+      folderNoticeCalls()[index].options.action?.onClick?.(event)
+    })
+    return event
   }
 
   function folderNoticeCalls(): { title: string; options: ToastOptions }[] {
@@ -348,9 +357,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(folderNoticeCalls()).toHaveLength(1)
     })
 
-    act(() => {
-      folderNoticeCalls()[0].options.action?.onClick?.()
-    })
+    clickFix()
 
     expect(useMacFolderAccessFixStore.getState().openScope).toBe(SCOPE_A.daemonScope)
     expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(SCOPE_A)
@@ -367,9 +374,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     await waitFor(() => {
       expect(folderNoticeCalls()).toHaveLength(1)
     })
-    act(() => {
-      folderNoticeCalls()[0].options.action?.onClick?.()
-    })
+    clickFix()
     macTccAttribution.mockResolvedValue({
       health: 'intact',
       folderAccessMismatch: { ...SCOPE_A, freshDaemonAccess: 'denied' }
@@ -384,6 +389,30 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
   })
 
+  // Sonner deletes a toast after its action button runs unless the handler prevents the event, and
+  // it does that silently — no onDismiss — so the scope would stay latched with nothing on screen.
+  it('keeps the toast up when the user opens the dialog', async () => {
+    macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: SCOPE_A })
+    render(<MacosTccPromptNoticeHost />)
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(1)
+    })
+
+    const event = clickFix()
+
+    expect(event.preventDefault).toHaveBeenCalledTimes(1)
+    expect(noticePhase(SCOPE_A.daemonScope)).toBe('visible')
+    // The toast sonner kept is the one still on screen, so a later poll must not raise a second.
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
+      expect(macTccAttribution).toHaveBeenCalledTimes(2)
+    })
+    expect(folderNoticeCalls()).toHaveLength(1)
+    expect(dismissedEvents()).toHaveLength(0)
+  })
+
   // The open remedy belongs to one scope, so evidence that moves closes it rather than retargeting
   // the title, the checklist, and the reset onto a folder the user never asked about.
   it('closes the open dialog when the evidence moves to another scope', async () => {
@@ -392,9 +421,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     await waitFor(() => {
       expect(folderNoticeCalls()).toHaveLength(1)
     })
-    act(() => {
-      folderNoticeCalls()[0].options.action?.onClick?.()
-    })
+    clickFix()
     macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: SCOPE_B })
 
     act(() => {
@@ -425,9 +452,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(macTccAttribution).toHaveBeenCalledTimes(2)
     })
 
-    act(() => {
-      folderNoticeCalls()[0].options.action?.onClick?.()
-    })
+    clickFix()
 
     expect(folderNoticeCalls()).toHaveLength(1)
     expect(useMacFolderAccessFixStore.getState().mismatch).toEqual(denied)
