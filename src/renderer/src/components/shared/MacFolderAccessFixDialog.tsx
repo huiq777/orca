@@ -226,28 +226,28 @@ function FixFooter({
  * toast. Two steps, because a restart alone only works once Orca itself is allowed again — which
  * step 1 does, and the focus-time poll behind `restartWillHelp` is what notices it landed.
  */
-export function MacFolderAccessFixDialog(): React.JSX.Element | null {
-  const open = useMacFolderAccessFixStore((s) => s.open)
-  const mismatch = useMacFolderAccessFixStore((s) => s.mismatch)
+function FolderAccessFix({
+  mismatch,
+  open
+}: {
+  mismatch: PtyManagementFolderAccessMismatch
+  open: boolean
+}): React.JSX.Element {
   const close = useMacFolderAccessFixStore((s) => s.close)
   const markRestarted = useMacFolderAccessFixStore((s) => s.markRestarted)
   const observeMismatch = useMacFolderAccessFixStore((s) => s.observeMismatch)
   const [restartState, setRestartState] = useState<RestartState>('idle')
   const [resetState, setResetState] = useState<ResetState>('idle')
   const mountedRef = useMountedRef()
-  const cwdClass = mismatch?.cwdClass ?? null
+  const { cwdClass, daemonScope } = mismatch
 
   const onOpenSettings = useCallback((): void => {
-    if (cwdClass) {
-      track('daemon_folder_access_notice', { action: 'settings_opened', cwd_class: cwdClass })
-    }
+    track('daemon_folder_access_notice', { action: 'settings_opened', cwd_class: cwdClass })
     void window.api?.developerPermissions?.openSettings(FILES_AND_FOLDERS_PANE)
   }, [cwdClass])
 
   const onReset = useCallback(async (): Promise<void> => {
-    if (cwdClass) {
-      track('daemon_folder_access_notice', { action: 'reset_clicked', cwd_class: cwdClass })
-    }
+    track('daemon_folder_access_notice', { action: 'reset_clicked', cwd_class: cwdClass })
     setResetState('busy')
     try {
       const result = await window.api.pty.management.resetFolderAccess()
@@ -270,9 +270,7 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
   }, [cwdClass, mountedRef, observeMismatch])
 
   const onRestart = useCallback(async (): Promise<void> => {
-    if (cwdClass) {
-      track('daemon_folder_access_notice', { action: 'restart_clicked', cwd_class: cwdClass })
-    }
+    track('daemon_folder_access_notice', { action: 'restart_clicked', cwd_class: cwdClass })
     setRestartState('busy')
     try {
       const { success } = await window.api.pty.management.restart()
@@ -280,22 +278,19 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
         return
       }
       setRestartState(success ? 'done' : 'failed')
-      if (success && mismatch) {
+      if (success) {
         // Why via the store: the replaced daemon's identity is gone, so the poll that raised the
         // toast will never mention it again; the notice hook retires it without logging a dismiss.
-        markRestarted(mismatch.daemonScope)
+        markRestarted(daemonScope)
       }
     } catch {
       if (mountedRef.current) {
         setRestartState('failed')
       }
     }
-  }, [cwdClass, markRestarted, mismatch, mountedRef])
+  }, [cwdClass, daemonScope, markRestarted, mountedRef])
 
-  if (!mismatch) {
-    return null
-  }
-  const folder = macFolderAccessFolderName(mismatch.cwdClass)
+  const folder = macFolderAccessFolderName(cwdClass)
   const busy = restartState === 'busy' || resetState === 'busy'
   return (
     <Dialog
@@ -355,4 +350,15 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
       </DialogContent>
     </Dialog>
   )
+}
+
+export function MacFolderAccessFixDialog(): React.JSX.Element | null {
+  const open = useMacFolderAccessFixStore((s) => s.open)
+  const mismatch = useMacFolderAccessFixStore((s) => s.mismatch)
+  if (!mismatch) {
+    return null
+  }
+  // Why keyed by scope: a replacement daemon's denial is a new remedy, and its checklist must
+  // start unticked rather than inherit the previous one's ticks from a host that never unmounts.
+  return <FolderAccessFix key={mismatch.daemonScope} mismatch={mismatch} open={open} />
 }

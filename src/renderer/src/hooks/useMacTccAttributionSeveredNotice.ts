@@ -138,6 +138,8 @@ export function useMacTccAttributionSeveredNotice(): void {
       }
       folderScopesShown.current.add(mismatch.daemonScope)
       visibleFolderScope.current = mismatch.daemonScope
+      // Why here and not in main: this latch, not the IPC read, is what decides a scope is shown.
+      track('daemon_folder_access_notice', { action: 'shown', cwd_class: mismatch.cwdClass })
       toast.warning(
         translate(
           'auto.hooks.useMacTccAttributionSeveredNotice.folderAccessTitle',

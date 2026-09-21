@@ -328,6 +328,29 @@ describe('MacFolderAccessFixDialog', () => {
     })
   })
 
+  // The host never unmounts, so a finished remedy must not tick the next daemon's checklist.
+  it('starts a replacement daemon’s remedy from scratch', async () => {
+    openWith(true)
+    render(<MacFolderAccessFixDialog />)
+    await userEvent.click(restartButton())
+    await waitFor(() => {
+      expect(footerButton('Done')).toBeTruthy()
+    })
+    await userEvent.click(footerButton('Done'))
+
+    act(() => {
+      useMacFolderAccessFixStore.getState().openFix({
+        daemonScope: 'bbbb444455556666',
+        cwdClass: 'documents',
+        restartWillHelp: false
+      })
+    })
+
+    expect(screen.getByRole('dialog').querySelectorAll('.text-status-success')).toHaveLength(0)
+    expect(footerButton('Reset permission')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Done' })).toBeNull()
+  })
+
   it('closes on Cancel', async () => {
     openWith(true)
     render(<MacFolderAccessFixDialog />)

@@ -242,6 +242,12 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     onDismiss?: () => void
   }
 
+  function shownEvents(): Record<string, unknown>[] {
+    return trackTelemetry.mock.calls
+      .filter(([name, props]) => name === 'daemon_folder_access_notice' && props.action === 'shown')
+      .map(([, props]) => props)
+  }
+
   function folderNoticeCalls(): { title: string; options: ToastOptions }[] {
     return vi
       .mocked(toast.warning)
@@ -405,6 +411,18 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
       expect(macTccAttribution).toHaveBeenCalledTimes(2)
     })
     expect(folderNoticeCalls()).toHaveLength(1)
+    expect(shownEvents()).toHaveLength(1)
+  })
+
+  // The notice is shown by the renderer, so the renderer is what can count it.
+  it('counts the notice as shown when it raises one, and not when it withholds one', async () => {
+    macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: SCOPE_A })
+    render(<MacosTccPromptNoticeHost />)
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(1)
+    })
+
+    expect(shownEvents()).toEqual([{ action: 'shown', cwd_class: 'documents' }])
   })
 
   it('never re-shows a scope the user dismissed this session', async () => {

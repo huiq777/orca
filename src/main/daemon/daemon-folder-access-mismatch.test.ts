@@ -32,11 +32,20 @@ beforeEach(() => {
   vi.useRealTimers()
 })
 
-/** The record path starts the probe without awaiting it; this is where its result lands. */
+/** Where an unawaited probe's result lands. */
 async function settleProbe(): Promise<void> {
   await Promise.resolve()
   await Promise.resolve()
   await Promise.resolve()
+}
+
+/** The spawn path records without probing, so every verdict here comes from a refresh. */
+async function recordAndProbe(
+  identity: DaemonEndpointIdentity,
+  cwd: string = DOCUMENTS
+): Promise<void> {
+  recordDaemonFolderAccessMismatch(identity, cwd)
+  await refreshDaemonFolderAccessProbe(identity)
 }
 
 describe('daemon folder access mismatch evidence', () => {
@@ -106,61 +115,16 @@ describe('daemon folder access mismatch evidence', () => {
   })
 })
 
-describe('daemon_folder_access_notice shown', () => {
-  it('emits a validator-accepted payload once per scope that leaves main', () => {
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    getDaemonFolderAccessMismatch(DAEMON)
-    getDaemonFolderAccessMismatch(DAEMON)
-
-    expect(trackMock).toHaveBeenCalledTimes(1)
-    const [name, props] = trackMock.mock.calls[0]
-    expect(name).toBe('daemon_folder_access_notice')
-    expect(props).toEqual({ action: 'shown', cwd_class: 'documents' })
-    expect(validate('daemon_folder_access_notice', props).ok).toBe(true)
-  })
-
-  it('does not emit while the evidence is withheld', () => {
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    getDaemonFolderAccessMismatch(RESTARTED)
-    expect(trackMock).not.toHaveBeenCalled()
-  })
-
-  it('emits again for a replacement daemon that is denied too', () => {
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    getDaemonFolderAccessMismatch(DAEMON)
-    recordDaemonFolderAccessMismatch(RESTARTED, DOCUMENTS)
-    getDaemonFolderAccessMismatch(RESTARTED)
-    // The replacement's own denial also counts a restart outcome; this asserts only `shown`.
-    const shown = trackMock.mock.calls.filter(([, props]) => props.action === 'shown')
-    expect(shown).toHaveLength(2)
-  })
-
-  it('still hands out the notice when the telemetry client throws', () => {
-    trackMock.mockImplementationOnce(() => {
-      throw new Error('posthog exploded')
-    })
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.cwdClass).toBe('documents')
-  })
-})
-
 describe('restartWillHelp', () => {
-  it('starts unanswered and never blocks the spawn path on the child', () => {
-    let release: (value: string) => void = () => {}
-    probeMock.mockReturnValue(
-      new Promise<string>((resolve) => {
-        release = resolve
-      })
-    )
+  it('starts unanswered, and the spawn path forks no child to answer it', () => {
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
 
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBeNull()
-    release('ok')
+    expect(probeMock).not.toHaveBeenCalled()
   })
 
   it('probes the folder the spawn was denied on', async () => {
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
 
     expect(probeMock).toHaveBeenCalledWith(DOCUMENTS)
   })
@@ -173,8 +137,7 @@ describe('restartWillHelp', () => {
     ['unknown', null]
   ])('maps a %s probe to %s', async (outcome, expected) => {
     probeMock.mockResolvedValue(outcome)
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
 
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(expected)
   })
@@ -187,12 +150,13 @@ describe('restartWillHelp', () => {
       })
     )
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    void refreshDaemonFolderAccessProbe(DAEMON)
 
     probeMock.mockResolvedValue('denied')
     recordDaemonFolderAccessMismatch(DAEMON, '/Users/alice/Desktop/other')
-    await settleProbe()
+    const forced = refreshDaemonFolderAccessProbe(DAEMON, { force: true })
     release('ok')
-    await settleProbe()
+    await forced
 
     const notice = getDaemonFolderAccessMismatch(DAEMON)
     expect(notice?.cwdClass).toBe('desktop')
@@ -201,8 +165,7 @@ describe('restartWillHelp', () => {
 
   it('survives a probe that rejects', async () => {
     probeMock.mockRejectedValue(new Error('spawn failed'))
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
 
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBeNull()
   })
@@ -211,8 +174,7 @@ describe('restartWillHelp', () => {
 describe('refreshDaemonFolderAccessProbe', () => {
   it('re-probes a denial so step one can complete itself', async () => {
     probeMock.mockResolvedValue('denied')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(false)
 
     vi.setSystemTime(Date.now() + 6_000)
@@ -224,8 +186,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
   it('reuses a probe younger than the refresh interval', async () => {
     probeMock.mockResolvedValue('denied')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     expect(probeMock).toHaveBeenCalledTimes(1)
 
     await refreshDaemonFolderAccessProbe(DAEMON)
@@ -235,8 +196,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
   it('treats a settled true as final', async () => {
     probeMock.mockResolvedValue('ok')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     vi.setSystemTime(Date.now() + 60_000)
 
     await refreshDaemonFolderAccessProbe(DAEMON)
@@ -246,8 +206,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
   it('re-probes an unanswered entry once the interval has passed', async () => {
     probeMock.mockResolvedValue('other')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     vi.setSystemTime(Date.now() + 6_000)
 
     await refreshDaemonFolderAccessProbe(DAEMON)
@@ -257,8 +216,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
   it('does nothing for a daemon the evidence does not belong to', async () => {
     probeMock.mockResolvedValue('denied')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     vi.setSystemTime(Date.now() + 6_000)
 
     await refreshDaemonFolderAccessProbe(RESTARTED)
@@ -275,9 +233,10 @@ describe('refreshDaemonFolderAccessProbe', () => {
       })
     )
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    const first = refreshDaemonFolderAccessProbe(DAEMON)
     const joined = refreshDaemonFolderAccessProbe(DAEMON)
     release('ok')
-    await joined
+    await Promise.all([first, joined])
 
     expect(probeMock).toHaveBeenCalledTimes(1)
     expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
@@ -287,8 +246,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
   // otherwise hand it the pre-reset one.
   it('probes again inside the refresh interval when forced', async () => {
     probeMock.mockResolvedValue('denied')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
     probeMock.mockResolvedValue('ok')
 
     await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
@@ -308,7 +266,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
         })
     )
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    void refreshDaemonFolderAccessProbe(DAEMON)
 
     const forced = refreshDaemonFolderAccessProbe(DAEMON, { force: true })
     releases[0]('denied')
@@ -322,8 +280,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
   it('keeps a settled true final even under force', async () => {
     probeMock.mockResolvedValue('ok')
-    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
-    await settleProbe()
+    await recordAndProbe(DAEMON)
 
     await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
 
@@ -350,12 +307,14 @@ describe('getDaemonFolderAccessTarget', () => {
     expect(getDaemonFolderAccessTarget(null)).toBeNull()
   })
 
-  // Reading the target must not be what makes the notice count as shown.
-  it('does not emit the shown event', () => {
+  // Reading evidence is not showing it: the renderer owns the `shown` event.
+  it('emits nothing, and neither does reading the notice', () => {
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
     trackMock.mockReset()
 
     getDaemonFolderAccessTarget(DAEMON)
+    getDaemonFolderAccessMismatch(DAEMON)
+    getDaemonFolderAccessMismatch(DAEMON)
 
     expect(trackMock).not.toHaveBeenCalled()
   })
@@ -428,5 +387,27 @@ describe('restart outcome', () => {
   it('says nothing when no denial preceded the spawn', () => {
     clearDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
     expect(trackMock).not.toHaveBeenCalled()
+  })
+
+  // The denial resolved itself before any restart, so the next daemon's denial is its own story.
+  it('says nothing about a denial the same daemon had already read back', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    clearDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    trackMock.mockReset()
+
+    recordDaemonFolderAccessMismatch(RESTARTED, DOCUMENTS)
+
+    expect(trackMock).not.toHaveBeenCalled()
+  })
+
+  it('still records the replacement denial when the telemetry client throws', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    trackMock.mockImplementationOnce(() => {
+      throw new Error('posthog exploded')
+    })
+
+    recordDaemonFolderAccessMismatch(RESTARTED, DOCUMENTS)
+
+    expect(getDaemonFolderAccessMismatch(RESTARTED)?.cwdClass).toBe('documents')
   })
 })

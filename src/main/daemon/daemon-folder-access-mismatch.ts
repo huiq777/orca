@@ -32,15 +32,13 @@ export type DaemonFolderAccessMismatchNotice = {
 type StoredMismatch = DaemonFolderAccessMismatchNotice & {
   daemonKey: string
   canonicalPath: string
-  observedAtMs: number
   probedAtMs: number | null
+  /** Latched once this denial has served as a restart's before-picture, so it counts one outcome. */
+  outcomeReported: boolean
 }
 
 let stored: StoredMismatch | null = null
 let probeInFlight: Promise<void> | null = null
-/** The denial a restart was last offered for; held past the restart so its outcome can be counted. */
-let priorDenial: { daemonKey: string; cwdClass: DaemonPtyCwdClass } | null = null
-const scopesReported = new Set<string>()
 
 function emit(
   action: EventProps<'daemon_folder_access_notice'>['action'],
@@ -60,6 +58,14 @@ function daemonKeyOf(identity: DaemonEndpointIdentity): string {
 /** Digest, never a path: the scope only has to tell two daemons apart inside one app session. */
 function daemonScopeOf(daemonKey: string): string {
   return createHash('sha256').update(daemonKey).digest('hex').slice(0, 16)
+}
+
+/** The entry, but only while it still belongs to the daemon asking for it. */
+function entryFor(identity: DaemonEndpointIdentity | null): StoredMismatch | null {
+  if (!identity || !stored || stored.daemonKey !== daemonKeyOf(identity)) {
+    return null
+  }
+  return stored
 }
 
 /** Only `ok` proves a fresh daemon would get in; every non-verdict stays `null`, never `false`. */
@@ -91,18 +97,24 @@ function startProbe(entry: StoredMismatch): Promise<void> {
 }
 
 /**
- * The restart's verdict: the first spawn by a *different* daemon into the folder class the previous
- * one was denied on. Counted once, so a session reports at most one outcome per restart offered.
+ * The restart's verdict: the first spawn by a *different* daemon into the folder class the stored
+ * denial is about. An entry the same daemon already read back is gone, so it reports nothing.
  */
-function reportRestartOutcome(
+function reportOutcomeIfReplacementDaemon(
   daemonKey: string,
   cwdClass: DaemonPtyCwdClass,
   fixed: boolean
 ): void {
-  if (!priorDenial || priorDenial.daemonKey === daemonKey || priorDenial.cwdClass !== cwdClass) {
+  const prior = stored
+  if (
+    !prior ||
+    prior.outcomeReported ||
+    prior.daemonKey === daemonKey ||
+    prior.cwdClass !== cwdClass
+  ) {
     return
   }
-  priorDenial = null
+  prior.outcomeReported = true
   emit(fixed ? 'restart_outcome_fixed' : 'restart_outcome_still_denied', cwdClass)
 }
 
@@ -115,19 +127,17 @@ export function recordDaemonFolderAccessMismatch(
   }
   const daemonKey = daemonKeyOf(identity)
   const cwdClass = classifyDaemonPtyCwd(cwd, homedir())
-  reportRestartOutcome(daemonKey, cwdClass, false)
-  priorDenial = { daemonKey, cwdClass }
+  reportOutcomeIfReplacementDaemon(daemonKey, cwdClass, false)
+  // Why no probe here: this is the PTY spawn path, and the focus-time poll probes before it answers.
   stored = {
     daemonKey,
     daemonScope: daemonScopeOf(daemonKey),
     cwdClass,
     canonicalPath: cwd,
-    observedAtMs: Date.now(),
     restartWillHelp: null,
-    probedAtMs: null
+    probedAtMs: null,
+    outcomeReported: false
   }
-  // Why fire-and-forget: this sits on the PTY spawn path, which may never wait on a child probe.
-  void startProbe(stored)
 }
 
 /**
@@ -143,7 +153,7 @@ export function clearDaemonFolderAccessMismatch(
   }
   const daemonKey = daemonKeyOf(identity)
   const cwdClass = classifyDaemonPtyCwd(cwd, homedir())
-  reportRestartOutcome(daemonKey, cwdClass, true)
+  reportOutcomeIfReplacementDaemon(daemonKey, cwdClass, true)
   if (stored?.daemonKey === daemonKey && stored.cwdClass === cwdClass) {
     stored = null
   }
@@ -164,11 +174,8 @@ export async function refreshDaemonFolderAccessProbe(
   if (force && probeInFlight) {
     await probeInFlight
   }
-  const entry = stored
-  if (!identity || !entry || entry.daemonKey !== daemonKeyOf(identity)) {
-    return
-  }
-  if (entry.restartWillHelp === true) {
+  const entry = entryFor(identity)
+  if (!entry || entry.restartWillHelp === true) {
     return
   }
   if (
@@ -188,37 +195,26 @@ export async function refreshDaemonFolderAccessProbe(
 export function getDaemonFolderAccessTarget(
   identity: DaemonEndpointIdentity | null
 ): { canonicalPath: string; cwdClass: DaemonPtyCwdClass } | null {
-  if (!identity || !stored || stored.daemonKey !== daemonKeyOf(identity)) {
-    return null
-  }
-  return { canonicalPath: stored.canonicalPath, cwdClass: stored.cwdClass }
+  const entry = entryFor(identity)
+  return entry ? { canonicalPath: entry.canonicalPath, cwdClass: entry.cwdClass } : null
 }
 
-/**
- * Returns evidence only while it still belongs to the daemon in use, and emits `shown` the first
- * time a given scope leaves main — the renderer therefore needs no telemetry plumbing for it.
- */
+/** Returns evidence only while it still belongs to the daemon in use. */
 export function getDaemonFolderAccessMismatch(
   currentIdentity: DaemonEndpointIdentity | null
 ): DaemonFolderAccessMismatchNotice | null {
-  if (!currentIdentity || !stored || stored.daemonKey !== daemonKeyOf(currentIdentity)) {
+  const entry = entryFor(currentIdentity)
+  if (!entry) {
     return null
   }
-  const notice = {
-    daemonScope: stored.daemonScope,
-    cwdClass: stored.cwdClass,
-    restartWillHelp: stored.restartWillHelp
+  return {
+    daemonScope: entry.daemonScope,
+    cwdClass: entry.cwdClass,
+    restartWillHelp: entry.restartWillHelp
   }
-  if (!scopesReported.has(notice.daemonScope)) {
-    scopesReported.add(notice.daemonScope)
-    emit('shown', notice.cwdClass)
-  }
-  return notice
 }
 
 export function resetDaemonFolderAccessMismatchForTests(): void {
   stored = null
   probeInFlight = null
-  priorDenial = null
-  scopesReported.clear()
 }
