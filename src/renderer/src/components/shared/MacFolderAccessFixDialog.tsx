@@ -44,19 +44,9 @@ function Step({
   )
 }
 
-function allowStepHelper(
-  mismatch: PtyManagementFolderAccessMismatch,
-  folder: string
-): string | undefined {
-  // Why the off-and-on line: users who reach this step usually see the toggle already on. The
-  // grant is recorded but macOS won't honour it for the daemon; re-toggling re-records it.
-  if (mismatch.restartWillHelp === false) {
-    return translate(
-      'auto.components.shared.MacFolderAccessFixDialog.stepAllowHow',
-      'Turn on your {{folder}} for Orca. If it’s already on, turn it off and on again.',
-      { folder }
-    )
-  }
+// No instruction for a toggle that is already on: nothing has been verified to fix that case yet
+// (STA-7948), so the step claims only what the probe knows.
+function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | undefined {
   // A probe that could not answer must not accuse the user of a missing grant.
   if (mismatch.restartWillHelp === null) {
     return translate(
@@ -69,12 +59,10 @@ function allowStepHelper(
 
 function FixSteps({
   mismatch,
-  restartState,
-  folder
+  restartState
 }: {
   mismatch: PtyManagementFolderAccessMismatch
   restartState: RestartState
-  folder: string
 }): React.JSX.Element {
   return (
     <>
@@ -85,7 +73,7 @@ function FixSteps({
             'auto.components.shared.MacFolderAccessFixDialog.stepAllow',
             'Allow Orca under Files and Folders'
           )}
-          helper={allowStepHelper(mismatch, folder)}
+          helper={allowStepHelper(mismatch)}
         />
         <Step
           done={restartState === 'done'}
@@ -257,7 +245,7 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
             )}
           </DialogDescription>
         </DialogHeader>
-        <FixSteps mismatch={mismatch} restartState={restartState} folder={folder} />
+        <FixSteps mismatch={mismatch} restartState={restartState} />
         <DialogFooter>
           <FixFooter
             mismatch={mismatch}
