@@ -20,9 +20,12 @@ vi.mock('@/i18n/i18n', () => ({
 import { MacFolderAccessFixDialog } from './MacFolderAccessFixDialog'
 import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
 
-function openWith(freshDaemonAccess: 'allowed' | 'denied' | 'unknown'): void {
+function openWith(
+  freshDaemonAccess: 'allowed' | 'denied' | 'unknown',
+  cwdClass: 'documents' | 'other-home' | 'outside-home' = 'documents'
+): void {
   useMacFolderAccessFixStore.setState({
-    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess },
+    mismatch: { daemonScope: 'aaaa111122223333', cwdClass, freshDaemonAccess },
     openScope: 'aaaa111122223333',
     visibleScope: 'aaaa111122223333'
   })
@@ -117,6 +120,30 @@ describe('MacFolderAccessFixDialog', () => {
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
     expect(screen.getByText('Re-allow Orca for your Documents folder')).toBeTruthy()
     expect(screen.getByText(/Reset asks macOS for the permission again/)).toBeTruthy()
+  })
+
+  // Only Documents, Desktop and Downloads have a TCC row, so a reset elsewhere is a button that
+  // cannot work. A workspace symlinked out of Documents, or one on an external volume, lands here.
+  it.each([['other-home'], ['outside-home']] as const)(
+    'points a denied %s workspace at System Settings instead of a reset',
+    (cwdClass) => {
+      openWith('denied', cwdClass)
+      render(<MacFolderAccessFixDialog />)
+
+      expect(screen.queryByRole('button', { name: /^Reset/ })).toBeNull()
+      expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
+      expect(footerButton('Cancel')).toBeTruthy()
+      expect(footerButton('Open System Settings')).toBeTruthy()
+    }
+  )
+
+  // Nothing here has been verified for a class with no row, so step one promises nothing.
+  it('drops the reset explanation when there is no permission to reset', () => {
+    openWith('denied', 'other-home')
+    render(<MacFolderAccessFixDialog />)
+
+    expect(screen.getByText('Allow Orca under Files and Folders')).toBeTruthy()
+    expect(screen.queryByText(/Reset asks macOS for the permission again/)).toBeNull()
   })
 
   // An unanswered probe must not accuse the user of a missing grant, but the pane stays reachable.

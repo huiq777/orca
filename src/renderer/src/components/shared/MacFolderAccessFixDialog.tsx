@@ -1,6 +1,7 @@
 import React, { useCallback, useState } from 'react'
 import { CircleCheck, CircleDashed, LoaderCircle } from 'lucide-react'
 import type { PtyManagementFolderAccessMismatch } from '../../../../preload/api-types'
+import { isMacTccFolderClass } from '../../../../shared/daemon-adoption-telemetry'
 import { useMountedRef } from '@/hooks/useMountedRef'
 import { translate } from '@/i18n/i18n'
 import { track } from '@/lib/telemetry'
@@ -46,6 +47,14 @@ function Step({
   )
 }
 
+/**
+ * Whether the denial is one `tccutil reset` can act on: only Documents, Desktop and Downloads have
+ * a per-app TCC row, so offering the button for any other folder promises a remedy that cannot run.
+ */
+function canResetPermission(mismatch: PtyManagementFolderAccessMismatch): boolean {
+  return mismatch.freshDaemonAccess === 'denied' && isMacTccFolderClass(mismatch.cwdClass)
+}
+
 function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | undefined {
   // A probe that could not answer must not accuse the user of a missing grant.
   if (mismatch.freshDaemonAccess === 'unknown') {
@@ -55,8 +64,8 @@ function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | 
     )
   }
   // The toggle is already on for everyone who sees this, so the step has to say what the reset
-  // does instead of pointing at a switch (STA-7948).
-  if (mismatch.freshDaemonAccess === 'denied') {
+  // does instead of pointing at a switch (STA-7948). Without a reset there is nothing to promise.
+  if (canResetPermission(mismatch)) {
     return translate(
       'auto.components.shared.MacFolderAccessFixDialog.stepAllowDenied',
       'Orca is already allowed, but macOS isn’t applying it to the terminal service. Reset asks macOS for the permission again. Click Allow when it prompts.'
@@ -82,7 +91,7 @@ function FixSteps({
         <Step
           done={mismatch.freshDaemonAccess === 'allowed' || restartState === 'done'}
           label={
-            mismatch.freshDaemonAccess === 'denied'
+            canResetPermission(mismatch)
               ? translate(
                   'auto.components.shared.MacFolderAccessFixDialog.stepReallow',
                   'Re-allow Orca for your {{folder}}',
@@ -167,7 +176,7 @@ function FixFooter({
   }
   // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot.
   // Two routes for one step would read as a choice the user cannot make.
-  if (mismatch.freshDaemonAccess === 'denied') {
+  if (canResetPermission(mismatch)) {
     // System Settings is the fallback: it appears only once the reset has settled without helping.
     const resetSettled = resetState === 'probed' || resetState === 'failed'
     return (
@@ -189,6 +198,20 @@ function FixFooter({
                 'auto.components.shared.MacFolderAccessFixDialog.reset',
                 'Reset permission'
               )}
+        </Button>
+      </>
+    )
+  }
+  // A denial with no TCC row to reset leaves System Settings as the only route, so it takes the
+  // primary slot: a restart cannot help while a fresh daemon is denied.
+  if (mismatch.freshDaemonAccess === 'denied') {
+    return (
+      <>
+        <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+          {translate('auto.components.shared.MacFolderAccessFixDialog.cancel', 'Cancel')}
+        </Button>
+        <Button size="sm" onClick={onOpenSettings} disabled={busy}>
+          {openSettingsLabel}
         </Button>
       </>
     )

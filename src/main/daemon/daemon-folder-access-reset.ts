@@ -6,7 +6,11 @@ import { app } from 'electron'
 import type { Dir } from 'node:fs'
 import { opendir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
-import type { DaemonPtyCwdClass } from '../../shared/daemon-adoption-telemetry'
+import {
+  isMacTccFolderClass,
+  type DaemonPtyCwdClass,
+  type MacTccFolderClass
+} from '../../shared/daemon-adoption-telemetry'
 import type { EventProps } from '../../shared/telemetry-events'
 import { readMacosBundleId, resetMacosTccPermission } from '../macos-tcc-reset'
 import { track } from '../telemetry/client'
@@ -29,8 +33,7 @@ export type DaemonFolderAccessResetResult =
   | { outcome: 'reset_failed' }
   | { outcome: 'probed'; mismatch: DaemonFolderAccessMismatchNotice | null }
 
-/** Only the folders macOS gates behind a per-app TCC row; the rest have nothing to reset. */
-const TCC_SERVICE_BY_CWD_CLASS: Partial<Record<DaemonPtyCwdClass, string>> = {
+const TCC_SERVICE_BY_CWD_CLASS: Record<MacTccFolderClass, string> = {
   documents: 'SystemPolicyDocumentsFolder',
   desktop: 'SystemPolicyDesktopFolder',
   downloads: 'SystemPolicyDownloadsFolder'
@@ -90,15 +93,14 @@ export async function resetFolderAccessForDaemon(
     return { outcome: 'unsupported' }
   }
   const target = getDaemonFolderAccessTarget(identity)
-  const service = target ? TCC_SERVICE_BY_CWD_CLASS[target.cwdClass] : undefined
-  if (!target || service === undefined) {
+  if (!target || !isMacTccFolderClass(target.cwdClass)) {
     return { outcome: 'unsupported' }
   }
   const bundleId = await readMacosBundleId(runningAppBundlePath())
   if (bundleId === null) {
     return { outcome: 'unsupported' }
   }
-  if (!(await resetMacosTccPermission(service, bundleId)).ok) {
+  if (!(await resetMacosTccPermission(TCC_SERVICE_BY_CWD_CLASS[target.cwdClass], bundleId)).ok) {
     return { outcome: 'reset_failed' }
   }
   await promptByReadingFolder(target.canonicalPath)

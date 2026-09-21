@@ -2,7 +2,9 @@ import { describe, expect, it } from 'vitest'
 import {
   classifyDaemonPtyCwd,
   classifyDaemonSpawnerPath,
-  DAEMON_PTY_CWD_CLASSES
+  DAEMON_PTY_CWD_CLASSES,
+  isMacTccFolderClass,
+  MAC_TCC_FOLDER_CLASSES
 } from './daemon-adoption-telemetry'
 import { eventSchemas } from './telemetry-event-registry'
 
@@ -48,6 +50,16 @@ describe('classifyDaemonPtyCwd', () => {
     expect(classifyDaemonPtyCwd('/Volumes/ext/repo', '/Users/a')).toBe('outside-home')
     // A sibling home that merely shares the prefix is not inside this home.
     expect(classifyDaemonPtyCwd('/Users/ab/Documents', '/Users/a')).toBe('outside-home')
+  })
+})
+
+// The reset remedy is offered for exactly these classes, so main and the fix dialog must agree.
+describe('isMacTccFolderClass', () => {
+  it('admits the three folders with a per-app TCC row and no others', () => {
+    for (const cwdClass of DAEMON_PTY_CWD_CLASSES) {
+      expect(isMacTccFolderClass(cwdClass)).toBe(MAC_TCC_FOLDER_CLASSES.some((c) => c === cwdClass))
+    }
+    expect([...MAC_TCC_FOLDER_CLASSES]).toEqual(['documents', 'desktop', 'downloads'])
   })
 })
 
