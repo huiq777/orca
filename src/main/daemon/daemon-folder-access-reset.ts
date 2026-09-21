@@ -115,9 +115,9 @@ export async function resetFolderAccessForDaemon(
     await refreshDaemonFolderAccessProbe(identity, { force: true })
   }
   const mismatch = getDaemonFolderAccessMismatch(identity)
-  emitResetOutcome(
-    target.cwdClass,
-    prompted ? (mismatch?.freshDaemonAccess ?? 'unknown') : 'unknown'
-  )
-  return { outcome: 'probed', mismatch }
+  // One access for the event and the dialog: with the prompt unanswered the stored verdict predates
+  // the reset, so reporting it as the reset's would claim a denial nothing has re-read.
+  const access = prompted ? (mismatch?.freshDaemonAccess ?? 'unknown') : 'unknown'
+  emitResetOutcome(target.cwdClass, access)
+  return { outcome: 'probed', mismatch: mismatch && { ...mismatch, freshDaemonAccess: access } }
 }

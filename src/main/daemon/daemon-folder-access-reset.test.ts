@@ -175,7 +175,11 @@ describe('resetFolderAccessForDaemon runs the remedy', () => {
       await vi.advanceTimersByTimeAsync(0)
       await vi.advanceTimersByTimeAsync(60_000)
 
-      expect(await pending).toEqual({ outcome: 'probed', mismatch: denied })
+      // The stored verdict predates the reset, so it is not the reset's answer.
+      expect(await pending).toEqual({
+        outcome: 'probed',
+        mismatch: { ...denied, freshDaemonAccess: 'unknown' }
+      })
       expect(refreshProbeMock).not.toHaveBeenCalled()
       // Nothing probed the folder after the reset, so the outcome is not a verdict.
       expect(trackMock).toHaveBeenCalledWith('daemon_folder_access_notice', {

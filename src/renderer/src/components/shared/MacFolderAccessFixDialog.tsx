@@ -136,7 +136,7 @@ function FixSteps({
           )}
         </p>
       ) : null}
-      {resetState === 'probed' && mismatch.freshDaemonAccess !== 'allowed' ? (
+      {resetState === 'probed' && mismatch.freshDaemonAccess === 'denied' ? (
         <p className="text-sm text-muted-foreground">
           {translate(
             'auto.components.shared.MacFolderAccessFixDialog.resetStillBlocked',

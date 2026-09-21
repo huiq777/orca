@@ -363,6 +363,20 @@ describe('MacFolderAccessFixDialog', () => {
     })
   })
 
+  // An unanswered probe is not evidence the reset failed, so the dialog says what it knows.
+  it('does not claim a block the re-probe never confirmed', async () => {
+    probed('unknown')
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+
+    await userEvent.click(resetButton())
+
+    await waitFor(() => {
+      expect(screen.getByText('Couldn’t verify. Skip if already allowed.')).toBeTruthy()
+    })
+    expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+  })
+
   // Reset failed, then the user granted it in System Settings: the failure is no longer true.
   it('drops the reset failure once the grant lands', async () => {
     const failure = 'Couldn’t reset the permission. Use System Settings instead.'
