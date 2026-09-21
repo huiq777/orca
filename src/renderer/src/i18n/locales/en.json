@@ -6415,7 +6415,6 @@
           "title": "Fix access to your {{folder}}",
           "lead": "macOS is blocking Orca’s terminal service from this folder.",
           "done": "Done",
-          "close": "Close",
           "cancel": "Cancel",
           "stepAllowUnknown": "Couldn’t verify. Skip if already allowed."
         },
