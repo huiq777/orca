@@ -69,6 +69,10 @@ function MobileRichMarkdownEditorWebInner(
   // The modal's half of `promptForUrl`: the command is waiting on this, and it is answered once,
   // by a submit, a cancel, or the unmount below.
   const pendingUrlRef = useRef<((url: string | null) => void) | null>(null)
+  // What the user typed, held until the drawer has gone. Measured in WebKit: answering while the
+  // field still had the focus left `execCommand` acting on a document that did not hold the
+  // selection, and Link and Image inserted nothing at all.
+  const answeredUrlRef = useRef<string | null>(null)
 
   const send = useCallback((call: (api: RichMarkdownEditorApi) => void) => {
     const mounted = documentRef.current
@@ -135,10 +139,18 @@ function MobileRichMarkdownEditorWebInner(
     receiveRef.current = handleMessage
   }, [handleMessage])
 
+  /** Closes the modal, keeping the answer for the moment the field no longer has the focus. */
   const answerUrlPrompt = useCallback((url: string | null) => {
-    const pending = pendingUrlRef.current
-    pendingUrlRef.current = null
+    answeredUrlRef.current = url
     setUrlPromptKind(null)
+  }, [])
+
+  /** The drawer has gone: the document may have its caret back, and its command may run. */
+  const releaseUrlPrompt = useCallback(() => {
+    const pending = pendingUrlRef.current
+    const url = answeredUrlRef.current
+    pendingUrlRef.current = null
+    answeredUrlRef.current = null
     pending?.(url)
   }, [])
 
@@ -148,6 +160,7 @@ function MobileRichMarkdownEditorWebInner(
         // A second ask while one is open cancels the first, so no command is left awaiting a modal
         // that has been replaced.
         pendingUrlRef.current?.(null)
+        answeredUrlRef.current = null
         pendingUrlRef.current = resolve
         setUrlPromptKind(kind)
       }),
@@ -194,6 +207,7 @@ function MobileRichMarkdownEditorWebInner(
         keyboardType="url"
         onSubmit={answerUrlPrompt}
         onCancel={() => answerUrlPrompt(null)}
+        onAfterClose={releaseUrlPrompt}
       />
     </View>
   )
