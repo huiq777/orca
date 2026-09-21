@@ -213,8 +213,9 @@ describe('openComputerUsePermissions', () => {
     vi.mocked(readFile)
       .mockResolvedValueOnce('{"accessibility":"granted","screenshots":"granted"}')
       .mockResolvedValueOnce('{"accessibility":"not-granted","screenshots":"not-granted"}')
-    vi.mocked(execFileSync).mockReturnValueOnce('com.example.orca.computer-use\n')
     vi.mocked(spawnSync).mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
+    // The bundle-id read is the first spawnSync of the reset path; the status probe uses spawn.
+    vi.mocked(spawnSync).mockReturnValueOnce(spawnSyncStdout('com.example.orca.computer-use\n'))
 
     await expect(resetComputerUsePermissions()).resolves.toEqual({
       platform: 'darwin',
@@ -226,23 +227,39 @@ describe('openComputerUsePermissions', () => {
         { id: 'screenshots', status: 'not-granted' }
       ]
     })
-    expect(execFileSync).toHaveBeenCalledWith(
+    // Argv is asserted exactly; the options belong to the shared spawn chokepoint these now run
+    // through, which owns and tests them.
+    const throughChokepoint = expect.objectContaining({ shell: false, windowsHide: true })
+    expect(spawnSync).toHaveBeenCalledWith(
       '/usr/libexec/PlistBuddy',
       ['-c', 'Print :CFBundleIdentifier', helperInfoPlistPath],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
+      throughChokepoint
     )
     expect(spawnSync).toHaveBeenCalledWith(
       '/usr/bin/tccutil',
       ['reset', 'Accessibility', 'com.example.orca.computer-use'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      throughChokepoint
     )
     expect(spawnSync).toHaveBeenCalledWith(
       '/usr/bin/tccutil',
       ['reset', 'ScreenCapture', 'com.example.orca.computer-use'],
-      { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }
+      throughChokepoint
     )
   })
 })
+
+/** A complete spawnSync result, so the bundle-id read has stdout to parse without a cast. */
+function spawnSyncStdout(text: string): ReturnType<typeof spawnSync> {
+  const stdout = Buffer.from(text)
+  return {
+    pid: 0,
+    output: [null, stdout, Buffer.alloc(0)],
+    stdout,
+    stderr: Buffer.alloc(0),
+    status: 0,
+    signal: null
+  }
+}
 
 function mockPermissionStatus(json: string): void {
   vi.mocked(spawnSync).mockReturnValue({ status: 0 } as ReturnType<typeof spawnSync>)
