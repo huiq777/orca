@@ -54,35 +54,53 @@ function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | 
       'Couldn’t verify. Skip if already allowed.'
     )
   }
-  // The toggle is already on for everyone who sees this, so the step is about the re-prompt the
-  // reset provokes, not about finding a switch (STA-7948).
+  // The toggle is already on for everyone who sees this, so the step has to say what the reset
+  // does instead of pointing at a switch (STA-7948).
   if (mismatch.restartWillHelp === false) {
     return translate(
       'auto.components.shared.MacFolderAccessFixDialog.stepAllowDenied',
-      'macOS will ask you to allow Orca again.'
+      'Orca is already allowed, but macOS isn’t applying it to the terminal service. Reset asks macOS for the permission again. Click Allow when it prompts.'
     )
   }
   return undefined
 }
 
+/** System Settings is the fallback, shown only once the reset has failed or left things blocked. */
+function settingsIsFallback(
+  mismatch: PtyManagementFolderAccessMismatch,
+  resetState: ResetState
+): boolean {
+  return resetState === 'failed' || (resetState === 'probed' && mismatch.restartWillHelp !== true)
+}
+
 function FixSteps({
   mismatch,
   restartState,
-  resetState
+  resetState,
+  folder
 }: {
   mismatch: PtyManagementFolderAccessMismatch
   restartState: RestartState
   resetState: ResetState
+  folder: string
 }): React.JSX.Element {
   return (
     <>
       <ol className="flex flex-col gap-3">
         <Step
           done={mismatch.restartWillHelp === true || restartState === 'done'}
-          label={translate(
-            'auto.components.shared.MacFolderAccessFixDialog.stepAllow',
-            'Allow Orca under Files and Folders'
-          )}
+          label={
+            mismatch.restartWillHelp === false
+              ? translate(
+                  'auto.components.shared.MacFolderAccessFixDialog.stepReallow',
+                  'Re-allow Orca for your {{folder}}',
+                  { folder }
+                )
+              : translate(
+                  'auto.components.shared.MacFolderAccessFixDialog.stepAllow',
+                  'Allow Orca under Files and Folders'
+                )
+          }
           helper={allowStepHelper(mismatch)}
         />
         <Step
@@ -155,14 +173,21 @@ function FixFooter({
       </Button>
     )
   }
-  // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot and
-  // System Settings stays as the manual route.
+  // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot.
+  // System Settings appears only once the reset has failed or left things blocked: two routes for
+  // one step read as a choice the user cannot make.
   if (mismatch.restartWillHelp === false) {
     return (
       <>
-        <Button variant="ghost" size="sm" onClick={onOpenSettings} disabled={busy}>
-          {openSettingsLabel}
-        </Button>
+        {settingsIsFallback(mismatch, resetState) ? (
+          <Button variant="ghost" size="sm" onClick={onOpenSettings} disabled={busy}>
+            {openSettingsLabel}
+          </Button>
+        ) : (
+          <Button variant="ghost" size="sm" onClick={onCancel} disabled={busy}>
+            {translate('auto.components.shared.MacFolderAccessFixDialog.cancel', 'Cancel')}
+          </Button>
+        )}
         <Button size="sm" onClick={onReset} disabled={busy}>
           {busy ? <LoaderCircle className="size-4 animate-spin" /> : null}
           {busy
@@ -310,7 +335,12 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
             )}
           </DialogDescription>
         </DialogHeader>
-        <FixSteps mismatch={mismatch} restartState={restartState} resetState={resetState} />
+        <FixSteps
+          mismatch={mismatch}
+          restartState={restartState}
+          resetState={resetState}
+          folder={folder}
+        />
         <DialogFooter>
           <FixFooter
             mismatch={mismatch}

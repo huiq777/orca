@@ -97,14 +97,16 @@ describe('MacFolderAccessFixDialog', () => {
     expect(restartButton().hasAttribute('disabled')).toBe(false)
   })
 
-  it('offers the reset and System Settings when a fresh daemon is still denied', () => {
+  it('offers only the reset when a fresh daemon is still denied, and says what it does', () => {
     openWith(false)
     render(<MacFolderAccessFixDialog />)
 
-    expect(footerButton('Open System Settings')).toBeTruthy()
+    expect(footerButton('Cancel')).toBeTruthy()
     expect(footerButton('Reset permission')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Open System Settings' })).toBeNull()
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
-    expect(screen.getByText('macOS will ask you to allow Orca again.')).toBeTruthy()
+    expect(screen.getByText('Re-allow Orca for your Documents folder')).toBeTruthy()
+    expect(screen.getByText(/Reset asks macOS for the permission again/)).toBeTruthy()
   })
 
   // An unanswered probe must not accuse the user of a missing grant, but the pane stays reachable.
@@ -137,7 +139,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('opens the Files and Folders pane through the permission opener', async () => {
-    openWith(false)
+    openWith(null)
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Open System Settings' }))
@@ -254,6 +256,7 @@ describe('MacFolderAccessFixDialog', () => {
       expect(screen.getByText('Still blocked after the reset.')).toBeTruthy()
     })
     expect(footerButton('Reset permission').hasAttribute('disabled')).toBe(false)
+    expect(footerButton('Open System Settings')).toBeTruthy()
   })
 
   // An unanswered re-probe is not evidence the reset worked, so the line stays up.
@@ -284,6 +287,7 @@ describe('MacFolderAccessFixDialog', () => {
         ).toBeTruthy()
       })
       expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+      expect(footerButton('Open System Settings')).toBeTruthy()
     }
   )
 
@@ -314,7 +318,7 @@ describe('MacFolderAccessFixDialog', () => {
     await userEvent.click(resetButton())
 
     expect(screen.getByRole('button', { name: /Resetting/ }).hasAttribute('disabled')).toBe(true)
-    expect(footerButton('Open System Settings').hasAttribute('disabled')).toBe(true)
+    expect(footerButton('Cancel').hasAttribute('disabled')).toBe(true)
     expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
     await userEvent.keyboard('{Escape}')
     expect(useMacFolderAccessFixStore.getState().open).toBe(true)
