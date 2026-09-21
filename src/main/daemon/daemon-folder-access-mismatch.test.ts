@@ -115,11 +115,11 @@ describe('daemon folder access mismatch evidence', () => {
   })
 })
 
-describe('restartWillHelp', () => {
+describe('freshDaemonAccess', () => {
   it('starts unanswered, and the spawn path forks no child to answer it', () => {
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
 
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBeNull()
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('unknown')
     expect(probeMock).not.toHaveBeenCalled()
   })
 
@@ -130,16 +130,16 @@ describe('restartWillHelp', () => {
   })
 
   it.each([
-    ['ok', true],
-    ['denied', false],
-    ['missing', null],
-    ['other', null],
-    ['unknown', null]
+    ['ok', 'allowed'],
+    ['denied', 'denied'],
+    ['missing', 'unknown'],
+    ['other', 'unknown'],
+    ['unknown', 'unknown']
   ])('maps a %s probe to %s', async (outcome, expected) => {
     probeMock.mockResolvedValue(outcome)
     await recordAndProbe(DAEMON)
 
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(expected)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe(expected)
   })
 
   it('drops a probe whose entry was replaced while the child ran', async () => {
@@ -160,14 +160,14 @@ describe('restartWillHelp', () => {
 
     const notice = getDaemonFolderAccessMismatch(DAEMON)
     expect(notice?.cwdClass).toBe('desktop')
-    expect(notice?.restartWillHelp).toBe(false)
+    expect(notice?.freshDaemonAccess).toBe('denied')
   })
 
   it('survives a probe that rejects', async () => {
     probeMock.mockRejectedValue(new Error('spawn failed'))
     await recordAndProbe(DAEMON)
 
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBeNull()
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('unknown')
   })
 })
 
@@ -175,13 +175,13 @@ describe('refreshDaemonFolderAccessProbe', () => {
   it('re-probes a denial so step one can complete itself', async () => {
     probeMock.mockResolvedValue('denied')
     await recordAndProbe(DAEMON)
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(false)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('denied')
 
     vi.setSystemTime(Date.now() + 6_000)
     probeMock.mockResolvedValue('ok')
     await refreshDaemonFolderAccessProbe(DAEMON)
 
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('allowed')
   })
 
   it('reuses a probe younger than the refresh interval', async () => {
@@ -239,7 +239,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
     await Promise.all([first, joined])
 
     expect(probeMock).toHaveBeenCalledTimes(1)
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('allowed')
   })
 
   // The reset's caller needs a verdict from after the reset, and the interval is what would
@@ -252,7 +252,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
     await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
 
     expect(probeMock).toHaveBeenCalledTimes(2)
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('allowed')
   })
 
   // A probe that started before the reset would otherwise win the race and discard the forced
@@ -275,7 +275,7 @@ describe('refreshDaemonFolderAccessProbe', () => {
     await forced
 
     expect(probeMock).toHaveBeenCalledTimes(2)
-    expect(getDaemonFolderAccessMismatch(DAEMON)?.restartWillHelp).toBe(true)
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('allowed')
   })
 
   it('keeps a settled true final even under force', async () => {

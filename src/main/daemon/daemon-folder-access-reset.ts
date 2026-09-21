@@ -14,7 +14,8 @@ import {
   getDaemonFolderAccessMismatch,
   getDaemonFolderAccessTarget,
   refreshDaemonFolderAccessProbe,
-  type DaemonFolderAccessMismatchNotice
+  type DaemonFolderAccessMismatchNotice,
+  type FreshDaemonAccess
 } from './daemon-folder-access-mismatch'
 import type { DaemonEndpointIdentity } from './daemon-hello-protocol'
 
@@ -58,17 +59,11 @@ async function promptByReadingFolder(path: string): Promise<void> {
   }
 }
 
-function resetOutcomeAction(
-  mismatch: DaemonFolderAccessMismatchNotice | null
-): EventProps<'daemon_folder_access_notice'>['action'] {
-  if (mismatch?.restartWillHelp === true) {
-    return 'reset_outcome_allowed'
-  }
-  if (mismatch?.restartWillHelp === false) {
-    return 'reset_outcome_still_denied'
-  }
-  return 'reset_outcome_unknown'
-}
+const RESET_OUTCOME_ACTION = {
+  allowed: 'reset_outcome_allowed',
+  denied: 'reset_outcome_still_denied',
+  unknown: 'reset_outcome_unknown'
+} as const satisfies Record<FreshDaemonAccess, EventProps<'daemon_folder_access_notice'>['action']>
 
 /**
  * Emitted from main, not the renderer: nobody has verified this remedy on an affected machine, so
@@ -80,7 +75,7 @@ function emitResetOutcome(
 ): void {
   try {
     track('daemon_folder_access_notice', {
-      action: resetOutcomeAction(mismatch),
+      action: RESET_OUTCOME_ACTION[mismatch?.freshDaemonAccess ?? 'unknown'],
       cwd_class: cwdClass
     })
   } catch {

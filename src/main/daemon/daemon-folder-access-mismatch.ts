@@ -19,14 +19,14 @@ import type { DaemonEndpointIdentity } from './daemon-hello-protocol'
 /** Long enough that a focus-time poll cannot spin up a child per poll, short enough to feel live. */
 const PROBE_REFRESH_INTERVAL_MS = 5_000
 
-/**
- * What the renderer is allowed to see: an opaque per-daemon scope, the folder class, and whether a
- * restart alone is the remedy. `restartWillHelp === null` means the probe could not answer.
- */
+/** What a daemon forked by this app right now would get, or `unknown` if the probe could not say. */
+export type FreshDaemonAccess = 'allowed' | 'denied' | 'unknown'
+
+/** What the renderer is allowed to see: an opaque per-daemon scope, the folder class, a verdict. */
 export type DaemonFolderAccessMismatchNotice = {
   daemonScope: string
   cwdClass: DaemonPtyCwdClass
-  restartWillHelp: boolean | null
+  freshDaemonAccess: FreshDaemonAccess
 }
 
 type StoredMismatch = DaemonFolderAccessMismatchNotice & {
@@ -68,12 +68,12 @@ function entryFor(identity: DaemonEndpointIdentity | null): StoredMismatch | nul
   return stored
 }
 
-/** Only `ok` proves a fresh daemon would get in; every non-verdict stays `null`, never `false`. */
-function restartWillHelpFrom(outcome: FreshDaemonFolderAccess): boolean | null {
+/** Only `ok` proves a fresh daemon would get in; a non-verdict stays `unknown`, never `denied`. */
+function freshDaemonAccessFrom(outcome: FreshDaemonFolderAccess): FreshDaemonAccess {
   if (outcome === 'ok') {
-    return true
+    return 'allowed'
   }
-  return outcome === 'denied' ? false : null
+  return outcome === 'denied' ? 'denied' : 'unknown'
 }
 
 async function probeStoredEntry(entry: StoredMismatch): Promise<void> {
@@ -82,7 +82,7 @@ async function probeStoredEntry(entry: StoredMismatch): Promise<void> {
   if (stored !== entry) {
     return
   }
-  stored = { ...entry, restartWillHelp: restartWillHelpFrom(outcome), probedAtMs: Date.now() }
+  stored = { ...entry, freshDaemonAccess: freshDaemonAccessFrom(outcome), probedAtMs: Date.now() }
 }
 
 function startProbe(entry: StoredMismatch): Promise<void> {
@@ -134,7 +134,7 @@ export function recordDaemonFolderAccessMismatch(
     daemonScope: daemonScopeOf(daemonKey),
     cwdClass,
     canonicalPath: cwd,
-    restartWillHelp: null,
+    freshDaemonAccess: 'unknown',
     probedAtMs: null,
     outcomeReported: false
   }
@@ -175,7 +175,7 @@ export async function refreshDaemonFolderAccessProbe(
     await probeInFlight
   }
   const entry = entryFor(identity)
-  if (!entry || entry.restartWillHelp === true) {
+  if (!entry || entry.freshDaemonAccess === 'allowed') {
     return
   }
   if (
@@ -210,7 +210,7 @@ export function getDaemonFolderAccessMismatch(
   return {
     daemonScope: entry.daemonScope,
     cwdClass: entry.cwdClass,
-    restartWillHelp: entry.restartWillHelp
+    freshDaemonAccess: entry.freshDaemonAccess
   }
 }
 

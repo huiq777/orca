@@ -20,10 +20,10 @@ vi.mock('@/i18n/i18n', () => ({
 import { MacFolderAccessFixDialog } from './MacFolderAccessFixDialog'
 import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
 
-function openWith(restartWillHelp: boolean | null): void {
+function openWith(freshDaemonAccess: 'allowed' | 'denied' | 'unknown'): void {
   useMacFolderAccessFixStore.setState({
     open: true,
-    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', restartWillHelp }
+    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess }
   })
 }
 
@@ -36,10 +36,10 @@ function resetButton(): HTMLElement {
 }
 
 /** The verdict a forced re-probe returned after the reset ran. */
-function probed(restartWillHelp: boolean | null): void {
+function probed(freshDaemonAccess: 'allowed' | 'denied' | 'unknown'): void {
   resetFolderAccess.mockResolvedValue({
     outcome: 'probed',
-    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', restartWillHelp }
+    mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', freshDaemonAccess }
   })
 }
 
@@ -56,7 +56,7 @@ beforeEach(() => {
   restart.mockReset().mockResolvedValue({ success: true })
   openSettings.mockReset().mockResolvedValue(undefined)
   resetFolderAccess.mockReset()
-  probed(false)
+  probed('denied')
   useMacFolderAccessFixStore.setState({ open: false, mismatch: null, restartedScope: null })
   Object.defineProperty(window, 'api', {
     configurable: true,
@@ -78,7 +78,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('names the denied folder and leads with the cause', () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     expect(screen.getByText('Fix access to your Documents folder')).toBeTruthy()
@@ -88,9 +88,9 @@ describe('MacFolderAccessFixDialog', () => {
     expect(screen.getByText('Open terminals and agents will restart.')).toBeTruthy()
   })
 
-  // restartWillHelp === true means a daemon forked now could already read the folder.
+  // 'allowed' means a daemon forked now could already read the folder.
   it('hides step one and enables Restart when the grant is already in place', () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     expect(screen.queryByRole('button', { name: 'Open System Settings' })).toBeNull()
@@ -98,7 +98,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('offers only the reset when a fresh daemon is still denied, and says what it does', () => {
-    openWith(false)
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     expect(footerButton('Cancel')).toBeTruthy()
@@ -111,7 +111,7 @@ describe('MacFolderAccessFixDialog', () => {
 
   // An unanswered probe must not accuse the user of a missing grant, but the pane stays reachable.
   it('keeps both actions and says so when the probe could not answer', () => {
-    openWith(null)
+    openWith('unknown')
     render(<MacFolderAccessFixDialog />)
 
     expect(footerButton('Open System Settings')).toBeTruthy()
@@ -120,7 +120,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('flips step one to done when a later poll reports the grant landed', async () => {
-    openWith(false)
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
     expect(screen.queryByRole('button', { name: /^Restart/ })).toBeNull()
 
@@ -128,7 +128,7 @@ describe('MacFolderAccessFixDialog', () => {
       useMacFolderAccessFixStore.getState().observeMismatch({
         daemonScope: 'aaaa111122223333',
         cwdClass: 'documents',
-        restartWillHelp: true
+        freshDaemonAccess: 'allowed'
       })
     })
 
@@ -139,7 +139,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('opens the Files and Folders pane through the permission opener', async () => {
-    openWith(null)
+    openWith('unknown')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(screen.getByRole('button', { name: 'Open System Settings' }))
@@ -152,7 +152,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('restarts the terminal service without a second confirmation', async () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
@@ -171,7 +171,7 @@ describe('MacFolderAccessFixDialog', () => {
         release = resolve
       })
     )
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
@@ -183,7 +183,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('checks off both steps, offers Done, and hands the toast to the notice hook', async () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
@@ -198,7 +198,7 @@ describe('MacFolderAccessFixDialog', () => {
 
   it('reports a refused restart inline and leaves the button usable', async () => {
     restart.mockResolvedValue({ success: false })
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
@@ -214,7 +214,7 @@ describe('MacFolderAccessFixDialog', () => {
 
   it('reports a rejected restart the same way', async () => {
     restart.mockRejectedValue(new Error('ipc gone'))
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(restartButton())
@@ -228,8 +228,8 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('reports the reset click and flips to Restart once the re-probe allows it', async () => {
-    probed(true)
-    openWith(false)
+    probed('allowed')
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(resetButton())
@@ -246,8 +246,8 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('says so when the re-probe still reports a denial', async () => {
-    probed(false)
-    openWith(false)
+    probed('denied')
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(resetButton())
@@ -262,7 +262,7 @@ describe('MacFolderAccessFixDialog', () => {
   // An unanswered re-probe is not evidence the reset worked, so the line stays up.
   it('keeps the still-blocked line when the reset returns no verdict', async () => {
     resetFolderAccess.mockResolvedValue({ outcome: 'probed', mismatch: null })
-    openWith(false)
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(resetButton())
@@ -276,7 +276,7 @@ describe('MacFolderAccessFixDialog', () => {
     'points at System Settings when the reset comes back %s',
     async (outcome) => {
       resetFolderAccess.mockResolvedValue({ outcome })
-      openWith(false)
+      openWith('denied')
       render(<MacFolderAccessFixDialog />)
 
       await userEvent.click(resetButton())
@@ -293,7 +293,7 @@ describe('MacFolderAccessFixDialog', () => {
 
   it('reports a rejected reset the same way', async () => {
     resetFolderAccess.mockRejectedValue(new Error('ipc gone'))
-    openWith(false)
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(resetButton())
@@ -312,7 +312,7 @@ describe('MacFolderAccessFixDialog', () => {
         release = resolve
       })
     )
-    openWith(false)
+    openWith('denied')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(resetButton())
@@ -330,7 +330,7 @@ describe('MacFolderAccessFixDialog', () => {
 
   // The host never unmounts, so a finished remedy must not tick the next daemon's checklist.
   it('starts a replacement daemon’s remedy from scratch', async () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
     await userEvent.click(restartButton())
     await waitFor(() => {
@@ -342,7 +342,7 @@ describe('MacFolderAccessFixDialog', () => {
       useMacFolderAccessFixStore.getState().openFix({
         daemonScope: 'bbbb444455556666',
         cwdClass: 'documents',
-        restartWillHelp: false
+        freshDaemonAccess: 'denied'
       })
     })
 
@@ -352,7 +352,7 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   it('closes on Cancel', async () => {
-    openWith(true)
+    openWith('allowed')
     render(<MacFolderAccessFixDialog />)
 
     await userEvent.click(footerButton('Cancel'))

@@ -48,7 +48,7 @@ function Step({
 
 function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | undefined {
   // A probe that could not answer must not accuse the user of a missing grant.
-  if (mismatch.restartWillHelp === null) {
+  if (mismatch.freshDaemonAccess === 'unknown') {
     return translate(
       'auto.components.shared.MacFolderAccessFixDialog.stepAllowUnknown',
       'Couldn’t verify. Skip if already allowed.'
@@ -56,7 +56,7 @@ function allowStepHelper(mismatch: PtyManagementFolderAccessMismatch): string | 
   }
   // The toggle is already on for everyone who sees this, so the step has to say what the reset
   // does instead of pointing at a switch (STA-7948).
-  if (mismatch.restartWillHelp === false) {
+  if (mismatch.freshDaemonAccess === 'denied') {
     return translate(
       'auto.components.shared.MacFolderAccessFixDialog.stepAllowDenied',
       'Orca is already allowed, but macOS isn’t applying it to the terminal service. Reset asks macOS for the permission again. Click Allow when it prompts.'
@@ -70,7 +70,9 @@ function settingsIsFallback(
   mismatch: PtyManagementFolderAccessMismatch,
   resetState: ResetState
 ): boolean {
-  return resetState === 'failed' || (resetState === 'probed' && mismatch.restartWillHelp !== true)
+  return (
+    resetState === 'failed' || (resetState === 'probed' && mismatch.freshDaemonAccess !== 'allowed')
+  )
 }
 
 function FixSteps({
@@ -88,9 +90,9 @@ function FixSteps({
     <>
       <ol className="flex flex-col gap-3">
         <Step
-          done={mismatch.restartWillHelp === true || restartState === 'done'}
+          done={mismatch.freshDaemonAccess === 'allowed' || restartState === 'done'}
           label={
-            mismatch.restartWillHelp === false
+            mismatch.freshDaemonAccess === 'denied'
               ? translate(
                   'auto.components.shared.MacFolderAccessFixDialog.stepReallow',
                   'Re-allow Orca for your {{folder}}',
@@ -131,7 +133,7 @@ function FixSteps({
           )}
         </p>
       ) : null}
-      {resetState === 'probed' && mismatch.restartWillHelp !== true ? (
+      {resetState === 'probed' && mismatch.freshDaemonAccess !== 'allowed' ? (
         <p className="text-sm text-muted-foreground">
           {translate(
             'auto.components.shared.MacFolderAccessFixDialog.resetStillBlocked',
@@ -176,7 +178,7 @@ function FixFooter({
   // Restarting cannot help while a fresh daemon is denied, so the reset takes the primary slot.
   // System Settings appears only once the reset has failed or left things blocked: two routes for
   // one step read as a choice the user cannot make.
-  if (mismatch.restartWillHelp === false) {
+  if (mismatch.freshDaemonAccess === 'denied') {
     return (
       <>
         {settingsIsFallback(mismatch, resetState) ? (
@@ -202,7 +204,7 @@ function FixFooter({
   }
   return (
     <>
-      {mismatch.restartWillHelp === null ? (
+      {mismatch.freshDaemonAccess === 'unknown' ? (
         <Button variant="ghost" size="sm" onClick={onOpenSettings} disabled={busy}>
           {openSettingsLabel}
         </Button>
@@ -224,7 +226,7 @@ function FixFooter({
 /**
  * The remedy for a daemon macOS refuses a folder to (STA-7948), raised from the folder-access
  * toast. Two steps, because a restart alone only works once Orca itself is allowed again — which
- * step 1 does, and the focus-time poll behind `restartWillHelp` is what notices it landed.
+ * step 1 does, and the focus-time poll behind `freshDaemonAccess` is what notices it landed.
  */
 function FolderAccessFix({
   mismatch,

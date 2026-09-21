@@ -9,7 +9,7 @@ import { useMacFolderAccessFixStore } from '@/store/mac-folder-access-fix'
 type FolderAccessMismatch = {
   daemonScope: string
   cwdClass: string
-  restartWillHelp: boolean | null
+  freshDaemonAccess: string
 } | null
 type AttributionResult = {
   health: 'intact' | 'severed' | 'unknown'
@@ -225,12 +225,12 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
   const SCOPE_A = {
     daemonScope: 'aaaa111122223333',
     cwdClass: 'documents',
-    restartWillHelp: true
+    freshDaemonAccess: 'allowed'
   }
   const SCOPE_B = {
     daemonScope: 'bbbb444455556666',
     cwdClass: 'desktop',
-    restartWillHelp: false
+    freshDaemonAccess: 'denied'
   }
 
   type ToastOptions = {
@@ -339,7 +339,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
     macTccAttribution.mockResolvedValue({
       health: 'intact',
-      folderAccessMismatch: { ...SCOPE_A, restartWillHelp: false }
+      folderAccessMismatch: { ...SCOPE_A, freshDaemonAccess: 'denied' }
     })
 
     act(() => {
@@ -347,7 +347,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     })
 
     await waitFor(() => {
-      expect(useMacFolderAccessFixStore.getState().mismatch?.restartWillHelp).toBe(false)
+      expect(useMacFolderAccessFixStore.getState().mismatch?.freshDaemonAccess).toBe('denied')
     })
   })
 
@@ -385,7 +385,7 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
         folderAccessMismatch: {
           daemonScope: `scope-${cwdClass}`,
           cwdClass,
-          restartWillHelp: true
+          freshDaemonAccess: 'allowed'
         }
       })
       render(<MacosTccPromptNoticeHost />)

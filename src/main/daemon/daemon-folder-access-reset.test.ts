@@ -18,7 +18,7 @@ const {
   resetMacosTccPermissionMock: vi.fn<() => { ok: boolean; detail?: string }>(() => ({ ok: true })),
   getTargetMock: vi.fn<() => { canonicalPath: string; cwdClass: string } | null>(() => null),
   getMismatchMock: vi.fn<
-    () => { daemonScope: string; cwdClass: string; restartWillHelp: boolean | null } | null
+    () => { daemonScope: string; cwdClass: string; freshDaemonAccess: string } | null
   >(() => null),
   refreshProbeMock: vi.fn(async () => {})
 }))
@@ -143,12 +143,16 @@ describe('resetFolderAccessForDaemon runs the remedy', () => {
     getMismatchMock.mockReturnValue({
       daemonScope: 'aaaa111122223333',
       cwdClass: 'documents',
-      restartWillHelp: false
+      freshDaemonAccess: 'denied'
     })
 
     expect(await resetFolderAccessForDaemon(DAEMON)).toEqual({
       outcome: 'probed',
-      mismatch: { daemonScope: 'aaaa111122223333', cwdClass: 'documents', restartWillHelp: false }
+      mismatch: {
+        daemonScope: 'aaaa111122223333',
+        cwdClass: 'documents',
+        freshDaemonAccess: 'denied'
+      }
     })
     expect(refreshProbeMock).toHaveBeenCalledWith(DAEMON, { force: true })
   })
@@ -168,14 +172,14 @@ describe('resetFolderAccessForDaemon runs the remedy', () => {
 // feature's only evidence. It must leave main as a valid event every time.
 describe('resetFolderAccessForDaemon reports the outcome', () => {
   it.each([
-    [true, 'reset_outcome_allowed'],
-    [false, 'reset_outcome_still_denied'],
-    [null, 'reset_outcome_unknown']
-  ])('emits %s as %s', async (restartWillHelp, action) => {
+    ['allowed', 'reset_outcome_allowed'],
+    ['denied', 'reset_outcome_still_denied'],
+    ['unknown', 'reset_outcome_unknown']
+  ])('emits %s as %s', async (freshDaemonAccess, action) => {
     getMismatchMock.mockReturnValue({
       daemonScope: 'aaaa111122223333',
       cwdClass: 'documents',
-      restartWillHelp
+      freshDaemonAccess
     })
 
     await resetFolderAccessForDaemon(DAEMON)

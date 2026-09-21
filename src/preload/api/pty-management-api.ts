@@ -27,12 +27,14 @@ export type PtyManagementDaemonCwdClass =
 
 // The daemon spawned a terminal into a folder it can't read while Orca can (STA-7948).
 // `daemonScope` is an opaque per-daemon digest, never a path — it only latches the notice.
-// `restartWillHelp`: a daemon forked now could read the folder, so restarting is the whole remedy.
-// `false` means Orca must be re-allowed in System Settings first; `null` means main could not tell.
+// `freshDaemonAccess` is what a daemon forked now would get: 'allowed' means restarting is the
+// whole remedy, 'denied' means Orca must be re-allowed first, 'unknown' means main could not tell.
+export type PtyManagementFreshDaemonAccess = 'allowed' | 'denied' | 'unknown'
+
 export type PtyManagementFolderAccessMismatch = {
   daemonScope: string
   cwdClass: PtyManagementDaemonCwdClass
-  restartWillHelp: boolean | null
+  freshDaemonAccess: PtyManagementFreshDaemonAccess
 }
 
 // Mirrors DaemonFolderAccessResetResult in src/main/daemon/daemon-folder-access-reset.ts.

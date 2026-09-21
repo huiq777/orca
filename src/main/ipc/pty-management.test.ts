@@ -5,7 +5,7 @@ import type { DaemonSessionInfo } from '../daemon/types'
 // replaces.
 type FolderAccessResetResult = {
   outcome: string
-  mismatch?: { daemonScope: string; cwdClass: string; restartWillHelp: boolean | null } | null
+  mismatch?: { daemonScope: string; cwdClass: string; freshDaemonAccess: string } | null
 }
 
 const {
@@ -24,7 +24,7 @@ const {
   restartDaemonMock: vi.fn(),
   getCurrentDaemonMacTccAttributionHealthMock: vi.fn(async () => 'unknown'),
   getDaemonFolderAccessMismatchMock: vi.fn<
-    () => { daemonScope: string; cwdClass: string; restartWillHelp: boolean | null } | null
+    () => { daemonScope: string; cwdClass: string; freshDaemonAccess: string } | null
   >(() => null),
   refreshDaemonFolderAccessProbeMock: vi.fn(async () => {}),
   resetFolderAccessForDaemonMock: vi.fn<() => Promise<FolderAccessResetResult>>(async () => ({
@@ -518,7 +518,7 @@ describe('pty:management IPC handlers', () => {
       folderAccessMismatch: {
         daemonScope: string
         cwdClass: string
-        restartWillHelp: boolean | null
+        freshDaemonAccess: string
       } | null
     }
 
@@ -554,7 +554,7 @@ describe('pty:management IPC handlers', () => {
       getDaemonFolderAccessMismatchMock.mockReturnValue({
         daemonScope: 'abc123def4567890',
         cwdClass: 'documents',
-        restartWillHelp: true
+        freshDaemonAccess: 'allowed'
       })
 
       const result = await readAttribution()
@@ -562,7 +562,7 @@ describe('pty:management IPC handlers', () => {
       expect(result.folderAccessMismatch).toEqual({
         daemonScope: 'abc123def4567890',
         cwdClass: 'documents',
-        restartWillHelp: true
+        freshDaemonAccess: 'allowed'
       })
       // Why: evidence belongs to the daemon spawning terminals now, never a legacy adapter's.
       expect(getDaemonFolderAccessMismatchMock).toHaveBeenCalledWith({
@@ -573,32 +573,32 @@ describe('pty:management IPC handlers', () => {
       expect(current.getDaemonIdentity).toHaveBeenCalled()
     })
 
-    function evidence(restartWillHelp: boolean | null): {
+    function evidence(freshDaemonAccess: string): {
       daemonScope: string
       cwdClass: string
-      restartWillHelp: boolean | null
+      freshDaemonAccess: string
     } {
-      return { daemonScope: 'abc123def4567890', cwdClass: 'documents', restartWillHelp }
+      return { daemonScope: 'abc123def4567890', cwdClass: 'documents', freshDaemonAccess }
     }
 
     // Why re-probe on the poll: the fix dialog's first step completes in System Settings, and
     // this is the only moment anything can notice that it landed.
-    it.each([[false], [null]])(
-      're-probes and re-reads while restartWillHelp is %s',
+    it.each([['denied'], ['unknown']])(
+      're-probes and re-reads while a fresh daemon reads %s',
       async (initial) => {
         getDaemonFolderAccessMismatchMock
           .mockReturnValueOnce(evidence(initial))
-          .mockReturnValue(evidence(true))
+          .mockReturnValue(evidence('allowed'))
 
         const result = await readAttribution()
 
         expect(refreshDaemonFolderAccessProbeMock).toHaveBeenCalledTimes(1)
-        expect(result.folderAccessMismatch?.restartWillHelp).toBe(true)
+        expect(result.folderAccessMismatch?.freshDaemonAccess).toBe('allowed')
       }
     )
 
-    it('does not re-probe once restartWillHelp is true', async () => {
-      getDaemonFolderAccessMismatchMock.mockReturnValue(evidence(true))
+    it('does not re-probe once a fresh daemon is allowed', async () => {
+      getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('allowed'))
 
       await readAttribution()
 
@@ -614,7 +614,7 @@ describe('pty:management IPC handlers', () => {
     })
 
     it('fails open to unknown when the refresh throws', async () => {
-      getDaemonFolderAccessMismatchMock.mockReturnValue(evidence(false))
+      getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('denied'))
       refreshDaemonFolderAccessProbeMock.mockRejectedValue(new Error('probe exploded'))
 
       const result = await readAttribution()
@@ -676,12 +676,20 @@ describe('pty:management IPC handlers', () => {
       getDaemonProviderMock.mockReturnValue(await makeRouter(current, [makeAdapter(4, [])]))
       resetFolderAccessForDaemonMock.mockResolvedValue({
         outcome: 'probed',
-        mismatch: { daemonScope: 'abc123def4567890', cwdClass: 'documents', restartWillHelp: true }
+        mismatch: {
+          daemonScope: 'abc123def4567890',
+          cwdClass: 'documents',
+          freshDaemonAccess: 'allowed'
+        }
       })
 
       expect(await runReset()).toEqual({
         outcome: 'probed',
-        mismatch: { daemonScope: 'abc123def4567890', cwdClass: 'documents', restartWillHelp: true }
+        mismatch: {
+          daemonScope: 'abc123def4567890',
+          cwdClass: 'documents',
+          freshDaemonAccess: 'allowed'
+        }
       })
       // Why the current adapter: a legacy daemon's denial is not the one the user is looking at.
       expect(resetFolderAccessForDaemonMock).toHaveBeenCalledWith({
