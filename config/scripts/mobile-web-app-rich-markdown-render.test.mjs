@@ -22,6 +22,7 @@ import * as esbuild from 'esbuild'
 import { chromium, webkit } from 'playwright-core'
 import { MOBILE_WEB_APP_ROOT_RESET, lucideBarrelPlugin } from './build-mobile-web-app-bundle.mjs'
 import { mobileWebAppDependenciesPresent } from './mobile-web-app-bundle-dependencies.mjs'
+import { textInputFontSizeFloor } from './mobile-web-app-text-input-font-size-seam.mjs'
 import {
   createBundleServer,
   installCspViolationRecorder,
@@ -33,8 +34,15 @@ import {
 const mobileDir = fileURLToPath(new URL('../../mobile', import.meta.url))
 const componentDir = join(mobileDir, 'src/components')
 
-/** The surface's floor, read from the seam rather than retyped. */
-const FLOOR = 16
+/**
+ * The surface's floor, read out of the seam's own module rather than retyped.
+ *
+ * The number was a literal `16` under a comment claiming it was read, which is the shape the seam
+ * exists to prevent: a theme that raised the body size past the floor would move what the page
+ * computes and leave this asserting the old number. `textInputFontSizeFloor` is the same reader the
+ * closure census uses, and it throws rather than defaulting when the seam is gone.
+ */
+const FLOOR = textInputFontSizeFloor(mobileDir)
 
 /** Every command, with how to set the document up for it and what it must produce. */
 const COMMANDS = [
@@ -423,7 +431,11 @@ describeEditor(
             const size = await page.evaluate(
               () => getComputedStyle(document.querySelector('#first-surface #editor')).fontSize
             )
-            expect(size).toBe(`${FLOOR}px`)
+            // At or above, not equal to the floor: the seam is `Math.max(bodySize, floor)`, so a
+            // theme whose body size passes the floor raises what the page computes and still keeps
+            // the rule. Equality against the floor would be the stale literal again, one module
+            // further away.
+            expect(Number.parseFloat(size)).toBeGreaterThanOrEqual(FLOOR)
             // And the sheet reaches only the editor. The oracle is one of the document's own
             // variables, which its `:root` rule declares and everything under it reads: set on the
             // host, and nowhere else. A sheet appended unscoped would have it on the root element,
