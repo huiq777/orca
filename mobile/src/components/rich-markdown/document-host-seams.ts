@@ -104,8 +104,13 @@ export function postToReactNativeWebView(message: MobileRichMarkdownEditorMessag
   }
 }
 
-/** The labels the WebView's dialog carried, which is the whole of what the prompt kind means there. */
-const URL_PROMPT_LABELS: Record<RichMarkdownUrlPromptKind, string> = {
+/**
+ * What each command asks for, which is the whole of what the prompt kind means.
+ *
+ * Exported because the page asks the same question through a modal, and an editor that said
+ * "Link URL" on the phone and something else on the page would be two editors.
+ */
+export const RICH_MARKDOWN_URL_PROMPT_LABELS: Record<RichMarkdownUrlPromptKind, string> = {
   link: 'Link URL',
   image: 'Image URL'
 }
@@ -118,7 +123,7 @@ const URL_PROMPT_LABELS: Record<RichMarkdownUrlPromptKind, string> = {
  * the page passes its own and this default is what the native document keeps until it does.
  */
 export function promptWindowForUrl(kind: RichMarkdownUrlPromptKind) {
-  return Promise.resolve(window.prompt(URL_PROMPT_LABELS[kind]))
+  return Promise.resolve(window.prompt(RICH_MARKDOWN_URL_PROMPT_LABELS[kind]))
 }
 
 /** The WebView's own measurement: what `visualViewport` says the keyboard covers. */
