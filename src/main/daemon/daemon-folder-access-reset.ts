@@ -94,11 +94,11 @@ export async function resetFolderAccessForDaemon(
   if (!target || service === undefined) {
     return { outcome: 'unsupported' }
   }
-  const bundleId = readMacosBundleId(runningAppBundlePath())
+  const bundleId = await readMacosBundleId(runningAppBundlePath())
   if (bundleId === null) {
     return { outcome: 'unsupported' }
   }
-  if (!resetMacosTccPermission(service, bundleId).ok) {
+  if (!(await resetMacosTccPermission(service, bundleId)).ok) {
     return { outcome: 'reset_failed' }
   }
   await promptByReadingFolder(target.canonicalPath)

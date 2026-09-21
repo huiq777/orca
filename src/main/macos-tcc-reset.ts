@@ -3,9 +3,9 @@
 // daemon folder-access fix (STA-7948), where clearing the row is what makes macOS ask again.
 
 import { join } from 'node:path'
-import { runProcessSync, type ProcessResult } from '../shared/child-process/run-process'
+import { runProcess, type ProcessResult } from '../shared/child-process/run-process'
 
-/** Bounded so a wedged helper cannot hold main: neither binary prompts, so neither should linger. */
+/** Bounded so a wedged helper cannot hold a caller: neither binary prompts, so neither lingers. */
 const TCC_COMMAND_TIMEOUT_MS = 10_000
 
 export type MacosTccResetResult = { ok: true } | { ok: false; detail: string }
@@ -14,9 +14,9 @@ export type MacosTccResetResult = { ok: true } | { ok: false; detail: string }
  * The bundle's `CFBundleIdentifier`, or null when it cannot be read — Info.plist is usually a
  * binary plist, so PlistBuddy is the only reader that works on both encodings.
  */
-export function readMacosBundleId(appBundlePath: string): string | null {
+export async function readMacosBundleId(appBundlePath: string): Promise<string | null> {
   try {
-    const result = runProcessSync({
+    const result = await runProcess({
       program: '/usr/libexec/PlistBuddy',
       args: ['-c', 'Print :CFBundleIdentifier', join(appBundlePath, 'Contents', 'Info.plist')],
       timeoutMs: TCC_COMMAND_TIMEOUT_MS
@@ -37,10 +37,13 @@ export function readMacosBundleId(appBundlePath: string): string | null {
  * LaunchServices does not know the bundle id, which is the ordinary outcome for an app running
  * from an unregistered location.
  */
-export function resetMacosTccPermission(service: string, bundleId: string): MacosTccResetResult {
+export async function resetMacosTccPermission(
+  service: string,
+  bundleId: string
+): Promise<MacosTccResetResult> {
   let result: ProcessResult
   try {
-    result = runProcessSync({
+    result = await runProcess({
       program: '/usr/bin/tccutil',
       args: ['reset', service, bundleId],
       timeoutMs: TCC_COMMAND_TIMEOUT_MS

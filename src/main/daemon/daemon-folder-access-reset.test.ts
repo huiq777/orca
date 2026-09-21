@@ -14,8 +14,10 @@ const {
   trackMock: vi.fn(),
   getPathMock: vi.fn(() => '/Applications/Orca.app/Contents/MacOS/Orca'),
   opendirMock: vi.fn(),
-  readMacosBundleIdMock: vi.fn<() => string | null>(() => 'com.stablyai.orca'),
-  resetMacosTccPermissionMock: vi.fn<() => { ok: boolean; detail?: string }>(() => ({ ok: true })),
+  readMacosBundleIdMock: vi.fn<() => Promise<string | null>>(async () => 'com.stablyai.orca'),
+  resetMacosTccPermissionMock: vi.fn<() => Promise<{ ok: boolean; detail?: string }>>(async () => ({
+    ok: true
+  })),
   getTargetMock: vi.fn<() => { canonicalPath: string; cwdClass: string } | null>(() => null),
   getMismatchMock: vi.fn<
     () => { daemonScope: string; cwdClass: string; freshDaemonAccess: string } | null
@@ -56,8 +58,8 @@ beforeEach(() => {
   trackMock.mockReset()
   getPathMock.mockReset().mockReturnValue('/Applications/Orca.app/Contents/MacOS/Orca')
   opendirMock.mockReset().mockResolvedValue(fakeDir())
-  readMacosBundleIdMock.mockReset().mockReturnValue('com.stablyai.orca')
-  resetMacosTccPermissionMock.mockReset().mockReturnValue({ ok: true })
+  readMacosBundleIdMock.mockReset().mockResolvedValue('com.stablyai.orca')
+  resetMacosTccPermissionMock.mockReset().mockResolvedValue({ ok: true })
   getTargetMock
     .mockReset()
     .mockReturnValue({ canonicalPath: '/Users/alice/Documents/repo', cwdClass: 'documents' })
@@ -96,14 +98,14 @@ describe('resetFolderAccessForDaemon rejects cases it cannot remedy', () => {
   )
 
   it('is unsupported when the running bundle has no readable identifier', async () => {
-    readMacosBundleIdMock.mockReturnValue(null)
+    readMacosBundleIdMock.mockResolvedValue(null)
 
     expect(await resetFolderAccessForDaemon(DAEMON)).toEqual({ outcome: 'unsupported' })
     expect(resetMacosTccPermissionMock).not.toHaveBeenCalled()
   })
 
   it('reports a refused tccutil without touching the folder', async () => {
-    resetMacosTccPermissionMock.mockReturnValue({ ok: false, detail: 'exit 64' })
+    resetMacosTccPermissionMock.mockResolvedValue({ ok: false, detail: 'exit 64' })
 
     expect(await resetFolderAccessForDaemon(DAEMON)).toEqual({ outcome: 'reset_failed' })
     expect(opendirMock).not.toHaveBeenCalled()

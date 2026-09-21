@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ProcessResult } from '../shared/child-process/run-process'
 
-const { runProcessSyncMock } = vi.hoisted(() => ({ runProcessSyncMock: vi.fn() }))
-vi.mock('../shared/child-process/run-process', () => ({ runProcessSync: runProcessSyncMock }))
+const { runProcessMock } = vi.hoisted(() => ({ runProcessMock: vi.fn() }))
+vi.mock('../shared/child-process/run-process', () => ({ runProcess: runProcessMock }))
 
 import { readMacosBundleId, resetMacosTccPermission } from './macos-tcc-reset'
 
@@ -19,15 +19,15 @@ function processResult(overrides: Partial<ProcessResult>): ProcessResult {
 }
 
 beforeEach(() => {
-  runProcessSyncMock.mockReset()
+  runProcessMock.mockReset()
 })
 
 describe('readMacosBundleId', () => {
-  it('reads CFBundleIdentifier out of the bundle’s Info.plist', () => {
-    runProcessSyncMock.mockReturnValue(processResult({ stdout: 'com.stablyai.orca\n' }))
+  it('reads CFBundleIdentifier out of the bundle’s Info.plist', async () => {
+    runProcessMock.mockResolvedValue(processResult({ stdout: 'com.stablyai.orca\n' }))
 
-    expect(readMacosBundleId('/Applications/Orca.app')).toBe('com.stablyai.orca')
-    expect(runProcessSyncMock).toHaveBeenCalledWith(
+    await expect(readMacosBundleId('/Applications/Orca.app')).resolves.toBe('com.stablyai.orca')
+    expect(runProcessMock).toHaveBeenCalledWith(
       expect.objectContaining({
         program: '/usr/libexec/PlistBuddy',
         args: ['-c', 'Print :CFBundleIdentifier', '/Applications/Orca.app/Contents/Info.plist']
@@ -38,29 +38,27 @@ describe('readMacosBundleId', () => {
   it.each([
     ['a non-zero exit', processResult({ code: 1, stderr: 'Print: Entry, Does Not Exist' })],
     ['empty output', processResult({ stdout: '  \n' })]
-  ])('returns null on %s', (_label, result) => {
-    runProcessSyncMock.mockReturnValue(result)
+  ])('returns null on %s', async (_label, result) => {
+    runProcessMock.mockResolvedValue(result)
 
-    expect(readMacosBundleId('/Applications/Orca.app')).toBeNull()
+    await expect(readMacosBundleId('/Applications/Orca.app')).resolves.toBeNull()
   })
 
-  it('returns null rather than throwing when PlistBuddy cannot be started', () => {
-    runProcessSyncMock.mockImplementation(() => {
-      throw new Error('ENOENT')
-    })
+  it('returns null rather than throwing when PlistBuddy cannot be started', async () => {
+    runProcessMock.mockRejectedValue(new Error('ENOENT'))
 
-    expect(readMacosBundleId('/Applications/Orca.app')).toBeNull()
+    await expect(readMacosBundleId('/Applications/Orca.app')).resolves.toBeNull()
   })
 })
 
 describe('resetMacosTccPermission', () => {
-  it('clears the service’s row for the bundle id', () => {
-    runProcessSyncMock.mockReturnValue(processResult({}))
+  it('clears the service’s row for the bundle id', async () => {
+    runProcessMock.mockResolvedValue(processResult({}))
 
-    expect(resetMacosTccPermission('SystemPolicyDocumentsFolder', 'com.stablyai.orca')).toEqual({
-      ok: true
-    })
-    expect(runProcessSyncMock).toHaveBeenCalledWith(
+    await expect(
+      resetMacosTccPermission('SystemPolicyDocumentsFolder', 'com.stablyai.orca')
+    ).resolves.toEqual({ ok: true })
+    expect(runProcessMock).toHaveBeenCalledWith(
       expect.objectContaining({
         program: '/usr/bin/tccutil',
         args: ['reset', 'SystemPolicyDocumentsFolder', 'com.stablyai.orca']
@@ -69,15 +67,17 @@ describe('resetMacosTccPermission', () => {
   })
 
   // The observed shape on macOS 15: exit 64, everything on stderr, nothing on stdout.
-  it('reports the unknown-bundle-id failure tccutil writes to stderr', () => {
-    runProcessSyncMock.mockReturnValue(
+  it('reports the unknown-bundle-id failure tccutil writes to stderr', async () => {
+    runProcessMock.mockResolvedValue(
       processResult({
         code: 64,
         stderr: 'tccutil: No such bundle identifier "com.example.absent"\n'
       })
     )
 
-    expect(resetMacosTccPermission('SystemPolicyDesktopFolder', 'com.example.absent')).toEqual({
+    await expect(
+      resetMacosTccPermission('SystemPolicyDesktopFolder', 'com.example.absent')
+    ).resolves.toEqual({
       ok: false,
       detail: 'tccutil: No such bundle identifier "com.example.absent"'
     })
@@ -91,23 +91,19 @@ describe('resetMacosTccPermission', () => {
       processResult({ code: null }),
       'exit unknown'
     ]
-  ])('falls back to %s', (_label, result, detail) => {
-    runProcessSyncMock.mockReturnValue(result)
+  ])('falls back to %s', async (_label, result, detail) => {
+    runProcessMock.mockResolvedValue(result)
 
-    expect(resetMacosTccPermission('SystemPolicyDownloadsFolder', 'com.stablyai.orca')).toEqual({
-      ok: false,
-      detail
-    })
+    await expect(
+      resetMacosTccPermission('SystemPolicyDownloadsFolder', 'com.stablyai.orca')
+    ).resolves.toEqual({ ok: false, detail })
   })
 
-  it('reports a failure to start as a failed reset', () => {
-    runProcessSyncMock.mockImplementation(() => {
-      throw new Error('EACCES')
-    })
+  it('reports a failure to start as a failed reset', async () => {
+    runProcessMock.mockRejectedValue(new Error('EACCES'))
 
-    expect(resetMacosTccPermission('SystemPolicyDocumentsFolder', 'com.stablyai.orca')).toEqual({
-      ok: false,
-      detail: 'EACCES'
-    })
+    await expect(
+      resetMacosTccPermission('SystemPolicyDocumentsFolder', 'com.stablyai.orca')
+    ).resolves.toEqual({ ok: false, detail: 'EACCES' })
   })
 })

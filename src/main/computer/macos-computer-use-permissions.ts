@@ -107,10 +107,10 @@ async function resetComputerUsePermissionsAsync(): Promise<ComputerUsePermission
     throw new RuntimeClientError('accessibility_error', status.helperUnavailableReason)
   }
 
-  const bundleId = readMacosBundleId(helperAppPath) ?? DEFAULT_COMPUTER_USE_BUNDLE_ID
+  const bundleId = (await readMacosBundleId(helperAppPath)) ?? DEFAULT_COMPUTER_USE_BUNDLE_ID
   closeExistingPermissionHelpers()
-  resetTccPermission('Accessibility', bundleId)
-  resetTccPermission('ScreenCapture', bundleId)
+  await resetTccPermission('Accessibility', bundleId)
+  await resetTccPermission('ScreenCapture', bundleId)
 
   return {
     ...(await getComputerUsePermissionStatus()),
@@ -132,10 +132,10 @@ function closeExistingPermissionHelpers(): void {
   }
 }
 
-function resetTccPermission(service: string, bundleId: string): void {
+async function resetTccPermission(service: string, bundleId: string): Promise<void> {
   // Why: macOS keeps TCC rows after uninstall; users need an explicit way to
   // clear stale grants or denials for the helper's stable bundle identity.
-  const result = resetMacosTccPermission(service, bundleId)
+  const result = await resetMacosTccPermission(service, bundleId)
   if (!result.ok) {
     throw new RuntimeClientError(
       'accessibility_error',
