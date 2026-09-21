@@ -1,7 +1,7 @@
 import { buildStartupCommandSubmission } from '../../shared/startup-command-submission'
 import { resolvePtyOwnerBackend } from '../../shared/pty-owner-backend'
 import { getDaemonSessionResultMetadata } from './daemon-create-or-attach-result'
-import { enumerateDirectoryOnceSync } from './directory-enumeration-probe'
+import { enumerateDirectoryOnce } from './directory-enumeration-probe'
 import { normalizePtySize } from './daemon-pty-size'
 import { Session } from './session'
 import { shellPathSupportsPtyStartupBarrier } from './shell-ready'
@@ -110,7 +110,8 @@ async function spawnAndPublishSession(
 ): Promise<CreateOrAttachResult> {
   const { size, wslDistro } = ctx
   // Why before the fork: the shell's own cwd may already have fallen back, so probe the requested path.
-  const cwdReadableByDaemon = opts.cwd && !wslDistro ? isCwdReadableByThisProcess(opts.cwd) : null
+  const cwdReadableByDaemon =
+    opts.cwd && !wslDistro ? await isCwdReadableByThisProcess(opts.cwd) : null
   const subprocess = await deps.spawnSubprocess({
     sessionId: opts.sessionId,
     cols: size.cols,
@@ -227,6 +228,6 @@ function createSessionExitHandler(
 // Why enumeration: a shell's cwd listing is what TCC withholds, and it can withhold it while
 // `access()` still passes. Only a proven permission refusal reads as denial — a missing path or an
 // unexpected error reads as readable so it can never masquerade as one.
-function isCwdReadableByThisProcess(cwd: string): boolean {
-  return enumerateDirectoryOnceSync(cwd) !== 'denied'
+async function isCwdReadableByThisProcess(cwd: string): Promise<boolean> {
+  return (await enumerateDirectoryOnce(cwd)) !== 'denied'
 }

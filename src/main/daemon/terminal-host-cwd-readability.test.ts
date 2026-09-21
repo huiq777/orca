@@ -2,18 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SubprocessHandle } from './session-subprocess-handle'
 import { TerminalHost, type TerminalHostOptions } from './terminal-host'
 
-const { opendirSyncMock } = vi.hoisted(() => ({ opendirSyncMock: vi.fn() }))
-vi.mock('node:fs', async (importOriginal) => ({
+const { opendirMock } = vi.hoisted(() => ({ opendirMock: vi.fn() }))
+// Async on purpose: on macOS this read is what raises the TCC prompt, which holds the syscall for
+// as long as the user leaves the sheet up.
+vi.mock('node:fs/promises', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  opendirSync: opendirSyncMock
+  opendir: opendirMock
 }))
 
 vi.mock('../pty-descendant-termination', () => ({ killWithDescendantSweep: vi.fn() }))
 
-const closeSync = vi.fn()
+const close = vi.fn(async () => {})
 
-function dirReading(readSync: () => unknown): { readSync: () => unknown; closeSync: () => void } {
-  return { readSync, closeSync }
+function dirReading(read: () => unknown): { read: () => unknown; close: () => Promise<void> } {
+  return { read, close }
 }
 
 function failWith(code: string): never {
@@ -48,8 +50,8 @@ describe('TerminalHost cwd readability verdict', () => {
   let platformDescriptor: PropertyDescriptor | undefined
 
   beforeEach(() => {
-    closeSync.mockReset()
-    opendirSyncMock.mockReset().mockReturnValue(dirReading(() => ({ name: 'entry' })))
+    close.mockReset()
+    opendirMock.mockReset().mockReturnValue(dirReading(() => ({ name: 'entry' })))
     platformDescriptor = Object.getOwnPropertyDescriptor(process, 'platform')
     Object.defineProperty(process, 'platform', { configurable: true, value: 'linux' })
     const spawnSubprocess: TerminalHostOptions['spawnSubprocess'] = () => createMockSubprocess()
@@ -74,39 +76,39 @@ describe('TerminalHost cwd readability verdict', () => {
 
   it('reports an enumerable cwd as readable, and closes the handle', async () => {
     expect((await create('readable', '/work/repo')).cwdReadableByDaemon).toBe(true)
-    expect(opendirSyncMock).toHaveBeenCalledWith('/work/repo')
-    expect(closeSync).toHaveBeenCalled()
+    expect(opendirMock).toHaveBeenCalledWith('/work/repo')
+    expect(close).toHaveBeenCalled()
   })
 
   it('reports an empty directory as readable', async () => {
-    opendirSyncMock.mockReturnValue(dirReading(() => null))
+    opendirMock.mockReturnValue(dirReading(() => null))
     expect((await create('empty', '/work/empty')).cwdReadableByDaemon).toBe(true)
   })
 
   // The #17696 shape: TCC refuses the daemon, and only a refusal may read as denial.
   it('reports EPERM on open as denied', async () => {
-    opendirSyncMock.mockImplementation(() => failWith('EPERM'))
+    opendirMock.mockImplementation(() => failWith('EPERM'))
     expect((await create('eperm', '/Users/alice/Documents/repo')).cwdReadableByDaemon).toBe(false)
   })
 
   it('reports EACCES on the first read as denied, and still closes the handle', async () => {
-    opendirSyncMock.mockReturnValue(dirReading(() => failWith('EACCES')))
+    opendirMock.mockReturnValue(dirReading(() => failWith('EACCES')))
     expect((await create('eacces', '/Users/alice/Desktop/repo')).cwdReadableByDaemon).toBe(false)
-    expect(closeSync).toHaveBeenCalled()
+    expect(close).toHaveBeenCalled()
   })
 
   it('reports a missing cwd as readable — absence is not a permission denial', async () => {
-    opendirSyncMock.mockImplementation(() => failWith('ENOENT'))
+    opendirMock.mockImplementation(() => failWith('ENOENT'))
     expect((await create('enoent', '/definitely/not/a/real/dir')).cwdReadableByDaemon).toBe(true)
   })
 
   it('reports a non-directory cwd as readable', async () => {
-    opendirSyncMock.mockImplementation(() => failWith('ENOTDIR'))
+    opendirMock.mockImplementation(() => failWith('ENOTDIR'))
     expect((await create('enotdir', '/work/repo/file.txt')).cwdReadableByDaemon).toBe(true)
   })
 
   it('reports an unexpected failure as readable — it must not masquerade as denial', async () => {
-    opendirSyncMock.mockImplementation(() => {
+    opendirMock.mockImplementation(() => {
       throw new TypeError('opendir is not a function')
     })
     expect((await create('unexpected', '/work/repo')).cwdReadableByDaemon).toBe(true)
@@ -114,7 +116,7 @@ describe('TerminalHost cwd readability verdict', () => {
 
   it('omits the verdict when no cwd was requested', async () => {
     expect((await create('no-cwd')).cwdReadableByDaemon).toBeUndefined()
-    expect(opendirSyncMock).not.toHaveBeenCalled()
+    expect(opendirMock).not.toHaveBeenCalled()
   })
 
   it('omits the verdict on attach to an existing session', async () => {

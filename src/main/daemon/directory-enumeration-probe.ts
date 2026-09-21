@@ -1,4 +1,4 @@
-import { opendirSync, type Dir } from 'node:fs'
+import type { Dir } from 'node:fs'
 import { opendir } from 'node:fs/promises'
 
 /** `denied` is the only outcome that proves a permission refusal; `other` keeps unknown errors apart. */
@@ -37,27 +37,5 @@ export async function enumerateDirectoryOnce(path: string): Promise<DirectoryEnu
     await dir?.close().catch(() => {
       // A handle we cannot close says nothing about readability.
     })
-  }
-}
-
-/**
- * The blocking variant, for a process that has nothing else to serve while it waits. Never call it
- * from the app: on macOS this read is what raises the TCC prompt, and the prompt holds the syscall
- * until the user answers, which would take the event loop down with it for the whole time.
- */
-export function enumerateDirectoryOnceSync(path: string): DirectoryEnumerationOutcome {
-  let dir: Dir | undefined
-  try {
-    dir = opendirSync(path)
-    dir.readSync()
-    return 'ok'
-  } catch (error) {
-    return outcomeForError(error)
-  } finally {
-    try {
-      dir?.closeSync()
-    } catch {
-      // A handle we cannot close says nothing about readability.
-    }
   }
 }
