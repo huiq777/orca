@@ -406,6 +406,19 @@ describe('MacFolderAccessFixDialog', () => {
     })
   })
 
+  // With no evidence there is nothing open, so a scope that comes back opens a fresh remedy.
+  it('forgets what was open once the evidence is gone', () => {
+    openWith('denied')
+    render(<MacFolderAccessFixDialog />)
+
+    act(() => {
+      useMacFolderAccessFixStore.getState().applyVerdict(null)
+    })
+
+    expect(dialogShown()).toBe(false)
+    expect(useMacFolderAccessFixStore.getState().openScope).toBeNull()
+  })
+
   it('starts a replacement daemon’s remedy from scratch', async () => {
     openWith('allowed')
     render(<MacFolderAccessFixDialog />)

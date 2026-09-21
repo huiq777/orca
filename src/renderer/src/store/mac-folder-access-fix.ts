@@ -51,7 +51,9 @@ export const useMacFolderAccessFixStore = create<MacFolderAccessFixState>()((set
   noticePhaseByScope: new Map<string, FolderAccessNoticePhase>(),
   openFix: () => set((state) => ({ openScope: state.mismatch?.daemonScope ?? null })),
   close: () => set({ openScope: null }),
-  applyVerdict: (mismatch) => set({ mismatch }),
+  // No evidence, nothing open: a later verdict for the same scope must start its remedy afresh.
+  applyVerdict: (mismatch) =>
+    set((state) => ({ mismatch, openScope: mismatch ? state.openScope : null })),
   showNotice: (daemonScope) =>
     set((state) => {
       const next = new Map(state.noticePhaseByScope)

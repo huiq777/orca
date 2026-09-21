@@ -380,6 +380,5 @@ export function MacFolderAccessFixDialog(): React.JSX.Element | null {
   if (!mismatch || openScope !== mismatch.daemonScope) {
     return null
   }
-  // Keyed as well as unmounted: a finished checklist must never tick the next remedy's steps.
-  return <FolderAccessFix key={mismatch.daemonScope} mismatch={mismatch} />
+  return <FolderAccessFix mismatch={mismatch} />
 }
