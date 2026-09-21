@@ -105,11 +105,31 @@ describe('daemon folder access mismatch evidence', () => {
     expect(getDaemonFolderAccessMismatch(RESTARTED)?.daemonScope).not.toBe(first)
   })
 
-  it('keeps every path fragment out of the scope', () => {
+  // The notice names a folder, so a second class under one daemon is a new notice, not the same
+  // one with a new word in it.
+  it('mints a new scope when the same daemon is denied a second folder class', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    const documents = getDaemonFolderAccessMismatch(DAEMON)?.daemonScope
+
+    recordDaemonFolderAccessMismatch(DAEMON, '/Users/alice/Desktop/other')
+
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.daemonScope).not.toBe(documents)
+  })
+
+  it('gives one daemon the same scope for every cwd of one folder class', () => {
+    recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
+    const first = getDaemonFolderAccessMismatch(DAEMON)?.daemonScope
+
+    recordDaemonFolderAccessMismatch(DAEMON, '/Users/alice/Documents/other-repo')
+
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.daemonScope).toBe(first)
+  })
+
+  it('keeps every path fragment and the folder class out of the scope', () => {
     recordDaemonFolderAccessMismatch(DAEMON, DOCUMENTS)
     const scope = getDaemonFolderAccessMismatch(DAEMON)?.daemonScope ?? ''
     expect(scope).toMatch(/^[0-9a-f]{16}$/)
-    for (const fragment of ['alice', 'Documents', 'repo', 'Users']) {
+    for (const fragment of ['alice', 'Documents', 'documents', 'repo', 'Users']) {
       expect(scope).not.toContain(fragment)
     }
   })

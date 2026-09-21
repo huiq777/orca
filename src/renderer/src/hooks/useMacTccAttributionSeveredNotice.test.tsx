@@ -531,6 +531,32 @@ describe('useMacTccAttributionSeveredNotice folder-access notice', () => {
     expect(folderNoticeCalls()[1].title).toContain('Desktop folder')
   })
 
+  // A second scope — a replacement daemon, or one daemon denied a second folder class — reuses the
+  // toast id, so the replaced toast's onDismiss may still fire. It must latch neither scope.
+  it('does not read a replaced toast’s dismissal as the user’s', async () => {
+    macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: SCOPE_A })
+    render(<MacosTccPromptNoticeHost />)
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(1)
+    })
+    const replaced = folderNoticeCalls()[0].options.onDismiss
+    macTccAttribution.mockResolvedValue({ health: 'intact', folderAccessMismatch: SCOPE_B })
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+    await waitFor(() => {
+      expect(folderNoticeCalls()).toHaveLength(2)
+    })
+
+    act(() => {
+      replaced?.()
+    })
+
+    expect(dismissedEvents()).toHaveLength(0)
+    expect(useMacFolderAccessFixStore.getState().dismissedScopes.size).toBe(0)
+    expect(useMacFolderAccessFixStore.getState().visibleScope).toBe(SCOPE_B.daemonScope)
+  })
+
   // A takedown the user did not ask for reaches the same callback, and must not read as their X.
   it('counts only the user’s own close as a dismissal', async () => {
     macTccAttribution.mockResolvedValueOnce({ health: 'intact', folderAccessMismatch: SCOPE_A })

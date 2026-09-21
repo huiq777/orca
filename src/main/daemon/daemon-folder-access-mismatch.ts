@@ -55,9 +55,12 @@ function daemonKeyOf(identity: DaemonEndpointIdentity): string {
   return `${identity.pid}:${identity.startedAtMs}:${identity.launchNonce}`
 }
 
-/** Digest, never a path: the scope only has to tell two daemons apart inside one app session. */
-function daemonScopeOf(daemonKey: string): string {
-  return createHash('sha256').update(daemonKey).digest('hex').slice(0, 16)
+/**
+ * Digest, never a path. The folder class is in it because the notice names a folder: one daemon
+ * denied a second class is a different remedy, and must not inherit the first one's latches.
+ */
+function daemonScopeOf(daemonKey: string, cwdClass: DaemonPtyCwdClass): string {
+  return createHash('sha256').update(`${daemonKey}:${cwdClass}`).digest('hex').slice(0, 16)
 }
 
 /** The entry, but only while it still belongs to the daemon asking for it. */
@@ -131,7 +134,7 @@ export function recordDaemonFolderAccessMismatch(
   // Why no probe here: this is the PTY spawn path, and the focus-time poll probes before it answers.
   stored = {
     daemonKey,
-    daemonScope: daemonScopeOf(daemonKey),
+    daemonScope: daemonScopeOf(daemonKey, cwdClass),
     cwdClass,
     canonicalPath: cwd,
     freshDaemonAccess: 'unknown',
