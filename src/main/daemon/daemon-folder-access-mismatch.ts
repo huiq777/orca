@@ -174,7 +174,8 @@ export async function refreshDaemonFolderAccessProbe(
     await probeInFlight
   }
   const entry = entryFor(identity)
-  if (!entry || entry.freshDaemonAccess === 'allowed') {
+  // Why force skips the settled shortcut: a reset must be judged by a probe that ran after it.
+  if (!entry || (!force && entry.freshDaemonAccess === 'allowed')) {
     return
   }
   if (

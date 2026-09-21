@@ -85,20 +85,19 @@ export function registerDaemonManagementHandlers(): void {
       health: MacDaemonTccAttributionHealth
       folderAccessMismatch: DaemonFolderAccessMismatchNotice | null
     }> => {
-      try {
-        const health = await getCurrentDaemonMacTccAttributionHealth()
-        const identity = readCurrentDaemonIdentity()
-        const mismatch = getDaemonFolderAccessMismatch(identity)
-        // Why re-probe on the poll: the fix dialog's first step completes in System Settings, and
-        // returning to Orca is the only moment anything can notice. A settled `allowed` is final.
-        if (mismatch && mismatch.freshDaemonAccess !== 'allowed') {
-          await refreshDaemonFolderAccessProbe(identity)
-          return { health, folderAccessMismatch: getDaemonFolderAccessMismatch(identity) }
-        }
-        return { health, folderAccessMismatch: mismatch }
-      } catch {
-        return { health: 'unknown', folderAccessMismatch: null }
+      // Why two guards: the two answers are independent evidence, and a failed health read must
+      // not present as "the folder evidence is gone".
+      const health = await getCurrentDaemonMacTccAttributionHealth().catch(
+        (): MacDaemonTccAttributionHealth => 'unknown'
+      )
+      const identity = readCurrentDaemonIdentity()
+      // Why re-probe on the poll: the fix dialog's first step completes in System Settings, and
+      // returning to Orca is the only moment anything can notice. A settled `allowed` is final.
+      const mismatch = getDaemonFolderAccessMismatch(identity)
+      if (mismatch && mismatch.freshDaemonAccess !== 'allowed') {
+        await refreshDaemonFolderAccessProbe(identity).catch(() => {})
       }
+      return { health, folderAccessMismatch: getDaemonFolderAccessMismatch(identity) }
     }
   )
 

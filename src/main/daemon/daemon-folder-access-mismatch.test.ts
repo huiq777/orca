@@ -204,6 +204,15 @@ describe('refreshDaemonFolderAccessProbe', () => {
     expect(probeMock).toHaveBeenCalledTimes(1)
   })
 
+  it('probes again on a forced refresh even after a settled allowed', async () => {
+    probeMock.mockResolvedValue('ok')
+    await recordAndProbe(DAEMON)
+
+    await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
+
+    expect(probeMock).toHaveBeenCalledTimes(2)
+  })
+
   it('re-probes an unanswered entry once the interval has passed', async () => {
     probeMock.mockResolvedValue('other')
     await recordAndProbe(DAEMON)
@@ -276,15 +285,6 @@ describe('refreshDaemonFolderAccessProbe', () => {
 
     expect(probeMock).toHaveBeenCalledTimes(2)
     expect(getDaemonFolderAccessMismatch(DAEMON)?.freshDaemonAccess).toBe('allowed')
-  })
-
-  it('keeps a settled true final even under force', async () => {
-    probeMock.mockResolvedValue('ok')
-    await recordAndProbe(DAEMON)
-
-    await refreshDaemonFolderAccessProbe(DAEMON, { force: true })
-
-    expect(probeMock).toHaveBeenCalledTimes(1)
   })
 })
 

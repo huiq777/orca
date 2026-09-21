@@ -268,7 +268,8 @@ describe('MacFolderAccessFixDialog', () => {
   })
 
   // An unanswered re-probe is not evidence the reset worked, so the line stays up.
-  it('keeps the still-blocked line when the reset returns no verdict', async () => {
+  // Evidence gone mid-reset means the daemon was replaced; nothing is left to fix here.
+  it('closes when the reset finds the evidence gone', async () => {
     resetFolderAccess.mockResolvedValue({ outcome: 'probed', mismatch: null })
     openWith('denied')
     render(<MacFolderAccessFixDialog />)
@@ -276,8 +277,22 @@ describe('MacFolderAccessFixDialog', () => {
     await userEvent.click(resetButton())
 
     await waitFor(() => {
-      expect(screen.getByText('Still blocked after the reset.')).toBeTruthy()
+      expect(useMacFolderAccessFixStore.getState().open).toBe(false)
     })
+    expect(screen.queryByText('Still blocked after the reset.')).toBeNull()
+  })
+
+  it('drops the unverified helper once the restart is done', async () => {
+    openWith('unknown')
+    render(<MacFolderAccessFixDialog />)
+    expect(screen.getByText('Couldn’t verify. Skip if already allowed.')).toBeTruthy()
+
+    await userEvent.click(restartButton())
+
+    await waitFor(() => {
+      expect(footerButton('Done')).toBeTruthy()
+    })
+    expect(screen.queryByText('Couldn’t verify. Skip if already allowed.')).toBeNull()
   })
 
   it.each([['reset_failed'], ['unsupported']])(

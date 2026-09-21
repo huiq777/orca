@@ -93,7 +93,7 @@ function FixSteps({
                   'Allow Orca under Files and Folders'
                 )
           }
-          helper={allowStepHelper(mismatch)}
+          helper={restartState === 'done' ? undefined : allowStepHelper(mismatch)}
         />
         <Step
           done={restartState === 'done'}
@@ -251,16 +251,20 @@ function FolderAccessFix({
         setResetState('failed')
         return
       }
+      // Why close on null: the evidence is gone (daemon replaced mid-reset), so there is nothing
+      // left for this dialog to fix and the next poll retires the toast.
+      if (result.mismatch === null) {
+        close()
+        return
+      }
       setResetState('probed')
-      // Why through the store: the fresh verdict is what decides the next step, and a null one
-      // leaves the dialog on the verdict it already had.
       applyPollVerdict(result.mismatch)
     } catch {
       if (mountedRef.current) {
         setResetState('failed')
       }
     }
-  }, [applyPollVerdict, cwdClass, mountedRef])
+  }, [applyPollVerdict, close, cwdClass, mountedRef])
 
   const onRestart = useCallback(async (): Promise<void> => {
     track('daemon_folder_access_notice', { action: 'restart_clicked', cwd_class: cwdClass })

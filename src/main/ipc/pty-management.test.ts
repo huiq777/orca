@@ -539,13 +539,16 @@ describe('pty:management IPC handlers', () => {
       expect(result.folderAccessMismatch).toBeNull()
     })
 
-    it('fails open to unknown when the probe throws', async () => {
+    it('fails open to unknown when the probe throws, keeping the folder evidence', async () => {
       getCurrentDaemonMacTccAttributionHealthMock.mockRejectedValue(new Error('no pid record'))
+      const current = makeAdapter(5, [])
+      getDaemonProviderMock.mockReturnValue(await makeRouter(current, []))
+      getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('denied'))
 
       const result = await readAttribution()
 
       expect(result.health).toBe('unknown')
-      expect(result.folderAccessMismatch).toBeNull()
+      expect(result.folderAccessMismatch).toEqual(evidence('denied'))
     })
 
     it('carries folder-access evidence for the current daemon', async () => {
@@ -613,14 +616,13 @@ describe('pty:management IPC handlers', () => {
       expect(refreshDaemonFolderAccessProbeMock).not.toHaveBeenCalled()
     })
 
-    it('fails open to unknown when the refresh throws', async () => {
+    it('keeps the folder evidence when the refresh throws', async () => {
       getDaemonFolderAccessMismatchMock.mockReturnValue(evidence('denied'))
       refreshDaemonFolderAccessProbeMock.mockRejectedValue(new Error('probe exploded'))
 
       const result = await readAttribution()
 
-      expect(result.health).toBe('unknown')
-      expect(result.folderAccessMismatch).toBeNull()
+      expect(result.folderAccessMismatch).toEqual(evidence('denied'))
     })
 
     it('reads a null identity when no daemon provider exists', async () => {
