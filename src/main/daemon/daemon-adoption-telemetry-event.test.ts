@@ -2,10 +2,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ParsedDaemonPid } from './daemon-pid-file-parse'
 import { validate } from '../telemetry/validator'
 
-const { trackMock, opendirSyncMock, existsSyncMock, readFileSyncMock, getVersionMock } = vi.hoisted(
+const { trackMock, opendirMock, existsSyncMock, readFileSyncMock, getVersionMock } = vi.hoisted(
   () => ({
     trackMock: vi.fn(),
-    opendirSyncMock: vi.fn(),
+    opendirMock: vi.fn(),
     existsSyncMock: vi.fn(() => true),
     readFileSyncMock: vi.fn(),
     getVersionMock: vi.fn(() => '1.4.191')
@@ -14,9 +14,13 @@ const { trackMock, opendirSyncMock, existsSyncMock, readFileSyncMock, getVersion
 vi.mock('../telemetry/client', () => ({ track: trackMock }))
 vi.mock('node:fs', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
-  opendirSync: opendirSyncMock,
   existsSync: existsSyncMock,
   readFileSync: readFileSyncMock
+}))
+// The app-side read is async on purpose: it can sit on an unanswered macOS folder prompt.
+vi.mock('node:fs/promises', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  opendir: opendirMock
 }))
 vi.mock('node:os', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -43,8 +47,8 @@ const DAEMON: DaemonEndpointIdentity = { pid: 1530, startedAtMs: 1_700_000, laun
 
 const DENIED_CWD = '/Users/alice/Documents/repo'
 
-function readableDir(): { readSync: () => { name: string }; closeSync: () => void } {
-  return { readSync: () => ({ name: 'entry' }), closeSync: () => {} }
+function readableDir(): { read: () => Promise<{ name: string }>; close: () => Promise<void> } {
+  return { read: async () => ({ name: 'entry' }), close: async () => {} }
 }
 
 function failWith(code: string): never {
@@ -68,7 +72,7 @@ const PID_PATH = '/fake/daemon.pid'
 beforeEach(() => {
   trackMock.mockReset()
   resetDaemonFolderAccessMismatchForTests()
-  opendirSyncMock.mockReset().mockReturnValue(readableDir())
+  opendirMock.mockReset().mockReturnValue(readableDir())
   existsSyncMock.mockReset().mockReturnValue(true)
   readFileSyncMock.mockReset().mockReturnValue(JSON.stringify(stalePidRecord))
   vi.spyOn(process, 'platform', 'get').mockReturnValue('darwin')
@@ -115,34 +119,34 @@ describe('trackDaemonAdopted', () => {
 })
 
 describe('hasDaemonPtyCwdDenialDiverged', () => {
-  it('is true only when the daemon was denied and this process can enumerate the same cwd', () => {
-    expect(hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(true)
-    expect(opendirSyncMock).toHaveBeenCalledWith(DENIED_CWD)
+  it('is true only when the daemon was denied and this process can enumerate the same cwd', async () => {
+    expect(await hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(true)
+    expect(opendirMock).toHaveBeenCalledWith(DENIED_CWD)
   })
 
   // False positives would drown the signal this event exists to measure, so every
   // non-divergent shape must stay silent — including daemons too old to report.
-  it('is false when the daemon could read the cwd or did not report one', () => {
-    expect(hasDaemonPtyCwdDenialDiverged(DENIED_CWD, true)).toBe(false)
-    expect(hasDaemonPtyCwdDenialDiverged(DENIED_CWD, undefined)).toBe(false)
-    expect(hasDaemonPtyCwdDenialDiverged(undefined, false)).toBe(false)
-    expect(opendirSyncMock).not.toHaveBeenCalled()
+  it('is false when the daemon could read the cwd or did not report one', async () => {
+    expect(await hasDaemonPtyCwdDenialDiverged(DENIED_CWD, true)).toBe(false)
+    expect(await hasDaemonPtyCwdDenialDiverged(DENIED_CWD, undefined)).toBe(false)
+    expect(await hasDaemonPtyCwdDenialDiverged(undefined, false)).toBe(false)
+    expect(opendirMock).not.toHaveBeenCalled()
   })
 
-  it('is false when this process cannot enumerate it either (no divergence)', () => {
-    opendirSyncMock.mockImplementation(() => failWith('EACCES'))
-    expect(hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(false)
+  it('is false when this process cannot enumerate it either (no divergence)', async () => {
+    opendirMock.mockImplementation(() => failWith('EACCES'))
+    expect(await hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(false)
   })
 
-  it('is false when the cwd is gone rather than refused', () => {
-    opendirSyncMock.mockImplementation(() => failWith('ENOENT'))
-    expect(hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(false)
+  it('is false when the cwd is gone rather than refused', async () => {
+    opendirMock.mockImplementation(() => failWith('ENOENT'))
+    expect(await hasDaemonPtyCwdDenialDiverged(DENIED_CWD, false)).toBe(false)
   })
 
-  it('is false off macOS', () => {
+  it('is false off macOS', async () => {
     vi.spyOn(process, 'platform', 'get').mockReturnValue('linux')
-    expect(hasDaemonPtyCwdDenialDiverged('/home/alice/Documents/repo', false)).toBe(false)
-    expect(opendirSyncMock).not.toHaveBeenCalled()
+    expect(await hasDaemonPtyCwdDenialDiverged('/home/alice/Documents/repo', false)).toBe(false)
+    expect(opendirMock).not.toHaveBeenCalled()
   })
 })
 
@@ -190,27 +194,27 @@ describe('trackDaemonPtyCwdDenied', () => {
 })
 
 describe('reportDaemonPtyCwdVerdict', () => {
-  it('emits the event and records the notice evidence on one directory read', () => {
-    reportDaemonPtyCwdVerdict({
+  it('emits the event and records the notice evidence on one directory read', async () => {
+    await reportDaemonPtyCwdVerdict({
       cwd: DENIED_CWD,
       cwdReadableByDaemon: false,
       pidPath: PID_PATH,
       daemonIdentity: DAEMON
     })
 
-    expect(opendirSyncMock).toHaveBeenCalledTimes(1)
+    expect(opendirMock).toHaveBeenCalledTimes(1)
     expect(trackMock.mock.calls[0][0]).toBe('daemon_pty_cwd_denied')
     expect(getDaemonFolderAccessMismatch(DAEMON)?.cwdClass).toBe('documents')
   })
 
-  it('retires the evidence when the same daemon later reads a cwd it owns', () => {
-    reportDaemonPtyCwdVerdict({
+  it('retires the evidence when the same daemon later reads a cwd it owns', async () => {
+    await reportDaemonPtyCwdVerdict({
       cwd: DENIED_CWD,
       cwdReadableByDaemon: false,
       pidPath: PID_PATH,
       daemonIdentity: DAEMON
     })
-    reportDaemonPtyCwdVerdict({
+    await reportDaemonPtyCwdVerdict({
       cwd: DENIED_CWD,
       cwdReadableByDaemon: true,
       pidPath: PID_PATH,
@@ -220,8 +224,8 @@ describe('reportDaemonPtyCwdVerdict', () => {
     expect(getDaemonFolderAccessMismatch(DAEMON)).toBeNull()
   })
 
-  it('does nothing for a daemon that never reported a verdict', () => {
-    reportDaemonPtyCwdVerdict({
+  it('does nothing for a daemon that never reported a verdict', async () => {
+    await reportDaemonPtyCwdVerdict({
       cwd: DENIED_CWD,
       cwdReadableByDaemon: undefined,
       pidPath: PID_PATH,
@@ -232,29 +236,55 @@ describe('reportDaemonPtyCwdVerdict', () => {
     expect(getDaemonFolderAccessMismatch(DAEMON)).toBeNull()
   })
 
-  it('records nothing when the daemon identity is unknown, and does not throw', () => {
-    expect(() =>
+  it('records nothing when the daemon identity is unknown, and never rejects', async () => {
+    await expect(
       reportDaemonPtyCwdVerdict({
         cwd: DENIED_CWD,
         cwdReadableByDaemon: false,
         pidPath: PID_PATH,
         daemonIdentity: null
       })
-    ).not.toThrow()
+    ).resolves.toBeUndefined()
     expect(getDaemonFolderAccessMismatch(DAEMON)).toBeNull()
   })
 
-  it('swallows a throwing telemetry client instead of failing the spawn', () => {
+  it('swallows a throwing telemetry client instead of failing the spawn', async () => {
     trackMock.mockImplementationOnce(() => {
       throw new Error('posthog exploded')
     })
-    expect(() =>
+    await expect(
       reportDaemonPtyCwdVerdict({
         cwd: DENIED_CWD,
         cwdReadableByDaemon: false,
         pidPath: PID_PATH,
         daemonIdentity: DAEMON
       })
-    ).not.toThrow()
+    ).resolves.toBeUndefined()
+  })
+
+  // The read behind this can sit on an unanswered macOS folder prompt, and a spawn that waited
+  // for it would hold main's event loop for as long as the user leaves the sheet up.
+  it('records nothing until the app-side read resolves, and the spawn need not wait', async () => {
+    let release: (dir: ReturnType<typeof readableDir>) => void = () => {}
+    opendirMock.mockReturnValue(
+      new Promise<ReturnType<typeof readableDir>>((resolve) => {
+        release = resolve
+      })
+    )
+
+    const pending = reportDaemonPtyCwdVerdict({
+      cwd: DENIED_CWD,
+      cwdReadableByDaemon: false,
+      pidPath: PID_PATH,
+      daemonIdentity: DAEMON
+    })
+
+    expect(trackMock).not.toHaveBeenCalled()
+    expect(getDaemonFolderAccessMismatch(DAEMON)).toBeNull()
+
+    release(readableDir())
+    await pending
+
+    expect(getDaemonFolderAccessMismatch(DAEMON)?.cwdClass).toBe('documents')
   })
 })

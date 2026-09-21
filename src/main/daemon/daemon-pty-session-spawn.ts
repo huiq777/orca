@@ -253,7 +253,8 @@ export abstract class DaemonPtySessionSpawn extends DaemonPtySpawnResult {
     activeSpawnContext = context
     const result = await this.createOrAttachSpawn(context, context.historySeedSegments)
     if (result.isNew && !attachOnly) {
-      reportDaemonPtyCwdVerdict({
+      // Not awaited: the app-side read behind it can sit on an unanswered macOS folder prompt.
+      void reportDaemonPtyCwdVerdict({
         cwd: effectiveCwd,
         cwdReadableByDaemon: result.cwdReadableByDaemon,
         pidPath: this.pidPath,

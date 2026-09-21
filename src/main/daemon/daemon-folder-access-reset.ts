@@ -3,8 +3,6 @@
 // macOS asks again, have the app touch the folder so the prompt names Orca, then re-probe.
 
 import { app } from 'electron'
-import type { Dir } from 'node:fs'
-import { opendir } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import {
   isMacTccFolderClass,
@@ -13,6 +11,7 @@ import {
 } from '../../shared/daemon-adoption-telemetry'
 import type { EventProps } from '../../shared/telemetry-events'
 import { readMacosBundleId, resetMacosTccPermission } from '../macos-tcc-reset'
+import { enumerateDirectoryOnce } from './directory-enumeration-probe'
 import { track } from '../telemetry/client'
 import {
   getDaemonFolderAccessMismatch,
@@ -47,18 +46,6 @@ function runningAppBundlePath(): string {
 /** An unanswered macOS sheet must not keep the fix dialog busy for the rest of the session. */
 const PROMPT_DEADLINE_MS = 60_000
 
-async function readFolderOnce(path: string): Promise<void> {
-  let dir: Dir | undefined
-  try {
-    dir = await opendir(path)
-    await dir.read()
-  } catch {
-    // The verdict is the re-probe's job; this read exists only to raise the prompt.
-  } finally {
-    await dir?.close().catch(() => {})
-  }
-}
-
 /**
  * Why the app reads the folder itself: TCC raises its prompt against the process that made the
  * syscall, so a daemon-side read would put the daemon on screen, or nothing at all. Async
@@ -72,7 +59,8 @@ async function promptByReadingFolder(path: string): Promise<boolean> {
   let deadline: NodeJS.Timeout | undefined
   try {
     return await Promise.race([
-      readFolderOnce(path).then(() => true),
+      // The outcome is the re-probe's job; this read exists only to raise the prompt.
+      enumerateDirectoryOnce(path).then(() => true),
       new Promise<false>((resolve) => {
         deadline = setTimeout(() => resolve(false), PROMPT_DEADLINE_MS)
       })

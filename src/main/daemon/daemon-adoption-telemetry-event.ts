@@ -66,15 +66,15 @@ export function trackDaemonAdopted(
  * A cwd neither can read (chmod, ENOENT, unmounted volume) is not the #17696 shape. Single oracle
  * for both the event below and the user-facing notice, so the app-side read happens once.
  */
-export function hasDaemonPtyCwdDenialDiverged(
+export async function hasDaemonPtyCwdDenialDiverged(
   cwd: string | undefined,
   cwdReadableByDaemon: boolean | undefined
-): boolean {
+): Promise<boolean> {
   try {
     if (process.platform !== 'darwin' || !cwd || cwdReadableByDaemon !== false) {
       return false
     }
-    return enumerateDirectoryOnce(cwd) === 'ok'
+    return (await enumerateDirectoryOnce(cwd)) === 'ok'
   } catch {
     return false
   }
@@ -98,13 +98,16 @@ export function trackDaemonPtyCwdDenied(cwd: string, pidPath: string | null): vo
  * The spawn path's single reader of the daemon's cwd verdict: one directory read feeds both the
  * event and the user-facing notice. Local current-protocol daemons only — one that omits the
  * verdict reports nothing. Every failure dies here; neither may ever cost a terminal.
+ *
+ * Never rejects, and the caller must not wait for it: the app-side read is what raises the macOS
+ * folder prompt, which holds the syscall for as long as the user leaves the sheet up.
  */
-export function reportDaemonPtyCwdVerdict(args: {
+export async function reportDaemonPtyCwdVerdict(args: {
   cwd: string | undefined
   cwdReadableByDaemon: boolean | undefined
   pidPath: string | null
   daemonIdentity: DaemonEndpointIdentity | null
-}): void {
+}): Promise<void> {
   try {
     const { cwd } = args
     if (!cwd) {
@@ -114,7 +117,7 @@ export function reportDaemonPtyCwdVerdict(args: {
       clearDaemonFolderAccessMismatch(args.daemonIdentity, cwd)
       return
     }
-    if (!hasDaemonPtyCwdDenialDiverged(cwd, args.cwdReadableByDaemon)) {
+    if (!(await hasDaemonPtyCwdDenialDiverged(cwd, args.cwdReadableByDaemon))) {
       return
     }
     trackDaemonPtyCwdDenied(cwd, args.pidPath)

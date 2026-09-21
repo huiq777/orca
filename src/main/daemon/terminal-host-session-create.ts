@@ -1,7 +1,7 @@
 import { buildStartupCommandSubmission } from '../../shared/startup-command-submission'
 import { resolvePtyOwnerBackend } from '../../shared/pty-owner-backend'
 import { getDaemonSessionResultMetadata } from './daemon-create-or-attach-result'
-import { enumerateDirectoryOnce } from './directory-enumeration-probe'
+import { enumerateDirectoryOnceSync } from './directory-enumeration-probe'
 import { normalizePtySize } from './daemon-pty-size'
 import { Session } from './session'
 import { shellPathSupportsPtyStartupBarrier } from './shell-ready'
@@ -228,5 +228,5 @@ function createSessionExitHandler(
 // `access()` still passes. Only a proven permission refusal reads as denial — a missing path or an
 // unexpected error reads as readable so it can never masquerade as one.
 function isCwdReadableByThisProcess(cwd: string): boolean {
-  return enumerateDirectoryOnce(cwd) !== 'denied'
+  return enumerateDirectoryOnceSync(cwd) !== 'denied'
 }
