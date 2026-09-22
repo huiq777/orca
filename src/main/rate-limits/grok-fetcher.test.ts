@@ -232,6 +232,57 @@ describe('fetchGrokRateLimits', () => {
     expect(result.error).toMatch(/did not report a usage percentage/i)
   })
 
+  // Why: narrowing the rule to a positive cap must not let a no-pool account
+  // that actually spent on this period read as 0% — the payload says the
+  // opposite. `used` is consumption; #9214/#9219's prepaidBalance is not.
+  it('reports unavailable when the extra-usage cap is zero but the period carries spend', async () => {
+    authState.file = freshAuthJson()
+    netFetchMock.mockResolvedValue(
+      jsonResponse({
+        config: {
+          currentPeriod: {
+            type: 'USAGE_PERIOD_TYPE_WEEKLY',
+            start: '2026-09-13T16:33:14.392197+00:00',
+            end: '2026-09-20T16:33:14.392197+00:00'
+          },
+          onDemandCap: { val: 0 },
+          used: { val: 37.5 },
+          isUnifiedBillingUser: true,
+          billingPeriodStart: '2026-09-13T16:33:14.392197+00:00',
+          billingPeriodEnd: '2026-09-20T16:33:14.392197+00:00'
+        }
+      })
+    )
+
+    const result = await fetchGrokRateLimits()
+    expect(result.status).toBe('unavailable')
+    expect(result.weekly).toBeNull()
+  })
+
+  // Why: an absent onDemandCap takes the same no-pool branch as an explicit
+  // zero. That branch had no coverage while the rule was being narrowed.
+  it('maps an omitted percent as zero when no extra-usage cap is reported at all', async () => {
+    authState.file = freshAuthJson()
+    netFetchMock.mockResolvedValueOnce(
+      jsonResponse({
+        config: {
+          currentPeriod: {
+            type: 'USAGE_PERIOD_TYPE_WEEKLY',
+            start: '2026-09-13T16:33:14.392197+00:00',
+            end: '2026-09-20T16:33:14.392197+00:00'
+          },
+          isUnifiedBillingUser: true,
+          billingPeriodStart: '2026-09-13T16:33:14.392197+00:00',
+          billingPeriodEnd: '2026-09-20T16:33:14.392197+00:00'
+        }
+      })
+    )
+
+    const result = await fetchGrokRateLimits()
+    expect(result.status).toBe('ok')
+    expect(result.weekly?.usedPercent).toBe(0)
+  })
+
   // Why: the monthly budget pair is a monthly window wherever it arrives — the
   // credits view must not relabel it 'Weekly credits'.
   it('publishes a credits-view monthly budget pair as a monthly window without a second request', async () => {

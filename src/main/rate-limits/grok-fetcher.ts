@@ -124,7 +124,10 @@ function usageScalars(config: GrokBillingConfig): (GrokMoneyVal | undefined)[] {
 function omittedPercentIsUnreported(config: GrokBillingConfig): boolean {
   const extraUsageCap = parseMoneyVal(config.onDemandCap)
   if (extraUsageCap === null || extraUsageCap <= 0) {
-    return false
+    // Why: the structural zeros say nothing, but spend on this period does —
+    // 0% next to a non-zero consumed amount claims the opposite of the payload.
+    // A balance is not consumption, so #9214/#9219 keeps its genuine 0%.
+    return [config.onDemandUsed, config.used].some((v) => (parseMoneyVal(v) ?? 0) > 0)
   }
   return usageScalars(config).some((value) => parseMoneyVal(value) === 0)
 }
