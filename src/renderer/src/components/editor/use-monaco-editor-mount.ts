@@ -213,7 +213,6 @@ export function useMonacoEditorMount(params: MonacoEditorMountParams): OnMount {
         console.error('[MonacoEditor] Mount failed', { error, fileId, filePath })
         setMountedEditor(null)
         editorRef.current = null
-        throw error
       }
     },
     [
