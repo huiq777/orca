@@ -307,6 +307,30 @@ describe('resolveAiVaultSessionDisplayTitle', () => {
     expect(resolveAiVaultSessionDisplayTitle(state, baseSession, null)).toBe(baseSession.title)
   })
 
+  it("uses a native-chat session's unified-tab rename, which is not a terminal tab", () => {
+    const structuredSession: AiVaultSession = {
+      ...baseSession,
+      structuredSession: { sessionId: 'session-1', workspaceId: 'wt-1' }
+    }
+    const state = makeState({
+      unifiedTabsByWorktree: {
+        'wt-1': [
+          {
+            id: 'unified-1',
+            worktreeId: 'wt-1',
+            contentType: 'agent-session',
+            entityId: 'session-1',
+            customLabel: 'Renamed native chat'
+          }
+        ]
+      }
+    })
+
+    expect(resolveAiVaultSessionDisplayTitle(state, structuredSession, null)).toBe(
+      'Renamed native chat'
+    )
+  })
+
   it('falls back to the session title when a blank custom rename was cleared', () => {
     const state = makeState({
       tabsByWorktree: { 'wt-1': [{ ...makeTab(), customTitle: '   ' }] }

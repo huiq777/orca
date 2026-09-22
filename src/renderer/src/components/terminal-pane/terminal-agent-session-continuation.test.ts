@@ -150,7 +150,7 @@ describe('prepareAgentSessionContinuationFromPane', () => {
     expect(request?.source.sourceTitle).toBe('Auth refactor')
   })
 
-  it('has no source title when the tab was never renamed', () => {
+  it('omits the source title when the tab has neither a rename nor a live title', () => {
     store.tabsByWorktree = { 'wt-1': [{ id: 'tab-1', launchAgent: 'claude' }] }
     const pane = makePane('unused scrollback')
 

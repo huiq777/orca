@@ -11,7 +11,8 @@ import type { AiVaultSession } from '../../../../shared/ai-vault-types'
 import { translate } from '@/i18n/i18n'
 import {
   findOriginalAiVaultSessionPane,
-  resolveAiVaultSessionDisplayTitle
+  resolveAiVaultSessionDisplayTitle,
+  type AiVaultOriginalPaneTarget
 } from './ai-vault-original-pane'
 import {
   createLazyAiVaultOriginalPaneIndex,
@@ -23,7 +24,10 @@ export function useAiVaultOriginalPaneActions(): {
   getOriginalPaneTarget: (
     session: AiVaultSession
   ) => ReturnType<typeof findOriginalAiVaultSessionPane>
-  getSessionDisplayTitle: (session: AiVaultSession) => string
+  getSessionDisplayTitle: (
+    session: AiVaultSession,
+    target?: AiVaultOriginalPaneTarget | null
+  ) => string
   getSessionLiveState: (session: AiVaultSession) => AgentStatusState | null
   isStructuredSessionOpen: (session: AiVaultSession) => boolean
   jumpToOriginalPane: (session: AiVaultSession) => void
@@ -73,12 +77,16 @@ export function useAiVaultOriginalPaneActions(): {
     [getOriginalPaneIndex]
   )
 
+  // Why: callers that already resolved the pane target (every vault row does)
+  // pass it back in so the shared index is not searched twice per row.
   const getSessionDisplayTitle = useCallback(
-    (session: AiVaultSession) =>
+    (session: AiVaultSession, target?: AiVaultOriginalPaneTarget | null) =>
       resolveAiVaultSessionDisplayTitle(
         originalPaneLookupState,
         session,
-        findOriginalAiVaultSessionPaneInIndex(getOriginalPaneIndex(), session)
+        target === undefined
+          ? findOriginalAiVaultSessionPaneInIndex(getOriginalPaneIndex(), session)
+          : target
       ),
     [getOriginalPaneIndex, originalPaneLookupState]
   )
