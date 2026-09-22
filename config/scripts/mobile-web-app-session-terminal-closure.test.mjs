@@ -256,18 +256,36 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  *   modules        4333 -> 4331   (-2)
  *   local modules   991 ->  989   (-2)
  *
- * The merge of the two is measured rather than summed, which is what this reading keeps having to
- * do: 4,360 on this branch and 4,331 on main are two changes to one list, and their arithmetic
- * (4,358) is a guess about modules neither side counted. Measured on the merged head with every
- * generator run first:
+ * Then the two other table parsers gave up their own row splitters and read the editor's
+ * `src/components/rich-markdown/markdown-table-rows.ts` instead, which the session page reaches
+ * through the PR comment renderer. It is the one module that joins, and the only one it can be: it
+ * imports nothing, and no other file under `rich-markdown/` is in the closure beside it.
  *
- *   modules        4331 -> 4358   (+27)
- *   local modules   989 -> 1016   (+27)
+ *   modules        4331 -> 4332   (+1)
+ *   local modules   989 ->  990   (+1)
  *
- * and the two local lists diffed against main's, which names the difference as exactly the 27 the
- * editor brings, with the dictation pair already gone from both sides.
+ * C7.10 item C then put the whole of that directory on the page, and the merge of the two is
+ * measured rather than summed — which is what this reading keeps having to do. The arithmetic of
+ * 4,358 on this branch and 4,332 on main double-counts `markdown-table-rows.ts`: main reached it
+ * first through the comment renderer, and it is also one of the 27 the editor brings. Measured on
+ * the merged head with every generator run first:
+ *
+ *   modules        4333 -> 4359   (+26)
+ *   local modules   991 -> 1017   (+26)
+ *
+ * and the two local lists diffed against main's, which names the difference module by module: the
+ * editor's own 26, with `markdown-table-rows.ts` already on both sides and the dictation pair
+ * already gone from both. 26 rather than 27 for exactly that reason — main reached the row splitter
+ * first, so it is not this branch's to add twice.
+ *
+ * The 4,333 the merge is measured against is not the 4,332 main pins. Main's own census fails at
+ * `059ee59a48`, `expected [ …(4333) ] to have a length of 4332`, because a second module joined
+ * beside the row splitter and was not counted: `src/shared/agent-icons/freebuff.png`, an image the
+ * icon set gained. Measured by diffing main's local list at `55378fce5b` against `059ee59a48`, which
+ * names both. The pin below is this merge's measurement rather than main's arithmetic, and it is
+ * green here; the -1 on main is main's to correct.
  */
-const SESSION_ROUTE_MODULES = 4358
+const SESSION_ROUTE_MODULES = 4359
 
 /** What the page enters this route through once the route is a switch with a `.web.tsx` sibling. */
 const ROUTE_ENTRY = [
