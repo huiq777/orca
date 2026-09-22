@@ -55,6 +55,12 @@ describe.skipIf(process.platform === 'win32')('Grok POSIX hook under a Claude ho
       })
     })
 
+    // Why: a readable endpoint file is what lets spool_hook_event write at all.
+    // With it unset the spool assertion below would pass even if a nested run
+    // spooled, because the helper returns before touching the disk.
+    const endpointPath = join(dir, 'endpoint.env')
+    writeFileSync(endpointPath, '')
+
     const child = spawn('/bin/sh', [scriptPath], {
       stdio: ['pipe', 'ignore', 'ignore'],
       env: {
@@ -63,7 +69,7 @@ describe.skipIf(process.platform === 'win32')('Grok POSIX hook under a Claude ho
         ORCA_PANE_KEY: 'pane-lead',
         ORCA_AGENT_HOOK_PORT: String(port),
         ORCA_AGENT_HOOK_TOKEN: 'token-1',
-        ORCA_AGENT_HOOK_ENDPOINT: '',
+        ORCA_AGENT_HOOK_ENDPOINT: endpointPath,
         ...env
       }
     })
@@ -86,12 +92,14 @@ describe.skipIf(process.platform === 'win32')('Grok POSIX hook under a Claude ho
     })
 
     // The spool is the other way an event could still reach the lead pane.
-    const spoolRoot = join(dir, '.orca', 'agent-hooks', 'spool')
+    // spool_hook_event derives its directory from the endpoint file's own
+    // parent (`${ORCA_AGENT_HOOK_ENDPOINT%/*}/spool`), not from HOME.
+    const spoolRoot = join(dir, 'spool')
     let spoolFiles: string[] = []
     try {
       const { readdirSync } = await import('node:fs')
       spoolFiles = readdirSync(spoolRoot, { recursive: true, encoding: 'utf8' }).filter((entry) =>
-        entry.endsWith('.json')
+        entry.endsWith('.jsonl')
       )
     } catch {
       spoolFiles = []
@@ -108,6 +116,16 @@ describe.skipIf(process.platform === 'win32')('Grok POSIX hook under a Claude ho
     expect(result.posts[0]).toContain('paneKey=pane-lead')
   })
 
+  // Why: without this the "spools nothing" assertions below would be vacuous —
+  // they must be able to observe a spool file when one is genuinely written.
+  it('spools a native run whose post cannot be delivered', async () => {
+    const result = await runHook({ ORCA_AGENT_HOOK_PORT: '1' })
+
+    expect(result.exitCode).toBe(0)
+    expect(result.posts).toEqual([])
+    expect(result.spoolFiles.length).toBeGreaterThan(0)
+  })
+
   it.each(['CLAUDECODE', 'CLAUDE_CODE', 'CLAUDE_JOB_DIR'])(
     'posts nothing and spools nothing when %s marks a nested run',
     async (variable) => {
@@ -121,15 +139,13 @@ describe.skipIf(process.platform === 'win32')('Grok POSIX hook under a Claude ho
 })
 
 describe('Windows grok hook under a Claude host', () => {
-  // Why: cmd cannot run here, so pin the ordering the drain contract needs —
-  // the guard must jump to the drain rather than exit, or an abandoned pipe
-  // strands a window per event (#11549).
-  it('skips to the stdin drain instead of posting', () => {
+  // Why: cmd cannot run here, so pin the ordering the drain contract needs.
+  it('routes a nested turn to the stdin drain instead of posting', () => {
     const lines = buildWindowsGrokHookScript().split('\r\n')
     const postIndex = lines.findIndex((line) => line.includes('/hook/grok'))
     expect(postIndex).toBeGreaterThan(-1)
 
-    for (const variable of ['CLAUDECODE', 'CLAUDE_CODE', 'CLAUDE_JOB_DIR']) {
+    for (const variable of ['CLAUDECODE', 'CLAUDE_CODE']) {
       const guardIndex = lines.findIndex(
         (line) =>
           line.includes(`%${variable}%`) && line.includes('goto :orca_agent_hook_drain_stdin')
@@ -137,5 +153,16 @@ describe('Windows grok hook under a Claude host', () => {
       expect(guardIndex, `${variable} guard missing`).toBeGreaterThan(-1)
       expect(guardIndex).toBeLessThan(postIndex)
     }
+  })
+
+  // Why: a backgrounded Claude job is the abandoned-stdin case #11549 guards
+  // against, so it must exit rather than park in more.com. claude-hook.cmd is
+  // pinned to the same shape in claude/hook-service.test.ts.
+  it('exits on the daemon-worker marker without routing to the drain', () => {
+    const lines = buildWindowsGrokHookScript().split('\r\n')
+    const guard = lines.find((line) => line.includes('%CLAUDE_JOB_DIR%'))
+
+    expect(guard).toBe('if not "%CLAUDE_JOB_DIR%"=="" exit /b 0')
+    expect(guard).not.toContain('orca_agent_hook_drain_stdin')
   })
 })
