@@ -9,7 +9,10 @@ import { findStructuredAgentSessionTab } from '@/lib/structured-agent-session-ta
 import type { AgentStatusState } from '../../../../shared/agent-status-types'
 import type { AiVaultSession } from '../../../../shared/ai-vault-types'
 import { translate } from '@/i18n/i18n'
-import { findOriginalAiVaultSessionPane } from './ai-vault-original-pane'
+import {
+  findOriginalAiVaultSessionPane,
+  resolveAiVaultSessionDisplayTitle
+} from './ai-vault-original-pane'
 import {
   createLazyAiVaultOriginalPaneIndex,
   findAiVaultSessionLiveStateInIndex,
@@ -20,6 +23,7 @@ export function useAiVaultOriginalPaneActions(): {
   getOriginalPaneTarget: (
     session: AiVaultSession
   ) => ReturnType<typeof findOriginalAiVaultSessionPane>
+  getSessionDisplayTitle: (session: AiVaultSession) => string
   getSessionLiveState: (session: AiVaultSession) => AgentStatusState | null
   isStructuredSessionOpen: (session: AiVaultSession) => boolean
   jumpToOriginalPane: (session: AiVaultSession) => void
@@ -67,6 +71,16 @@ export function useAiVaultOriginalPaneActions(): {
     (session: AiVaultSession) =>
       findAiVaultSessionLiveStateInIndex(getOriginalPaneIndex(), session),
     [getOriginalPaneIndex]
+  )
+
+  const getSessionDisplayTitle = useCallback(
+    (session: AiVaultSession) =>
+      resolveAiVaultSessionDisplayTitle(
+        originalPaneLookupState,
+        session,
+        findOriginalAiVaultSessionPaneInIndex(getOriginalPaneIndex(), session)
+      ),
+    [getOriginalPaneIndex, originalPaneLookupState]
   )
 
   const jumpToOriginalPane = useCallback(
@@ -118,6 +132,7 @@ export function useAiVaultOriginalPaneActions(): {
 
   return {
     getOriginalPaneTarget,
+    getSessionDisplayTitle,
     getSessionLiveState,
     isStructuredSessionOpen,
     jumpToOriginalPane,

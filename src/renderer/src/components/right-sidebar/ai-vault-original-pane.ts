@@ -290,3 +290,22 @@ export function findOriginalAiVaultSessionPane(
 
   return promptMatchedTargets.length === 1 ? promptMatchedTargets[0] : null
 }
+
+/**
+ * The name to show for a session across every list surface (sidebar, tab,
+ * AI Vault, resume pickers). A user-set Orca tab rename always wins over the
+ * harness-derived title baked into `session.title` (custom-title/thread_name/
+ * sqlite title, already prioritized over generated titles by the scanner).
+ */
+export function resolveAiVaultSessionDisplayTitle(
+  state: Pick<OriginalPaneState, 'tabsByWorktree'>,
+  session: AiVaultSession,
+  target: AiVaultOriginalPaneTarget | null
+): string {
+  const tab = target
+    ? (state.tabsByWorktree[target.worktreeId] ?? []).find(
+        (candidate) => candidate.id === target.tabId
+      )
+    : undefined
+  return tab?.customTitle?.trim() || session.title
+}

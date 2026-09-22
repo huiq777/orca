@@ -5,7 +5,8 @@ import type { SleepingAgentSessionRecord } from '../../../../shared/agent-sessio
 import { makePaneKey } from '../../../../shared/stable-pane-id'
 import {
   findAiVaultSessionLiveState,
-  findOriginalAiVaultSessionPane
+  findOriginalAiVaultSessionPane,
+  resolveAiVaultSessionDisplayTitle
 } from './ai-vault-original-pane'
 
 const LEAF_ID = '11111111-1111-4111-8111-111111111111'
@@ -266,5 +267,58 @@ describe('findAiVaultSessionLiveState', () => {
     })
 
     expect(findAiVaultSessionLiveState(state, baseSession)).toBeNull()
+  })
+})
+
+describe('resolveAiVaultSessionDisplayTitle', () => {
+  it("prefers the live tab's Orca custom rename over the raw session title", () => {
+    const state = makeState({
+      tabsByWorktree: { 'wt-1': [{ ...makeTab(), customTitle: 'Renamed by me' }] }
+    })
+
+    expect(
+      resolveAiVaultSessionDisplayTitle(state, baseSession, {
+        paneKey: makePaneKey('tab-1', LEAF_ID),
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: LEAF_ID
+      })
+    ).toBe('Renamed by me')
+  })
+
+  it('falls back to the session title when the tab has no custom rename', () => {
+    const state = makeState()
+
+    expect(
+      resolveAiVaultSessionDisplayTitle(state, baseSession, {
+        paneKey: makePaneKey('tab-1', LEAF_ID),
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: LEAF_ID
+      })
+    ).toBe(baseSession.title)
+  })
+
+  it('falls back to the session title when there is no matching pane target', () => {
+    const state = makeState({
+      tabsByWorktree: { 'wt-1': [{ ...makeTab(), customTitle: 'Renamed by me' }] }
+    })
+
+    expect(resolveAiVaultSessionDisplayTitle(state, baseSession, null)).toBe(baseSession.title)
+  })
+
+  it('falls back to the session title when a blank custom rename was cleared', () => {
+    const state = makeState({
+      tabsByWorktree: { 'wt-1': [{ ...makeTab(), customTitle: '   ' }] }
+    })
+
+    expect(
+      resolveAiVaultSessionDisplayTitle(state, baseSession, {
+        paneKey: makePaneKey('tab-1', LEAF_ID),
+        worktreeId: 'wt-1',
+        tabId: 'tab-1',
+        leafId: LEAF_ID
+      })
+    ).toBe(baseSession.title)
   })
 })
