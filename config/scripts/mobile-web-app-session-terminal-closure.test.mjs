@@ -264,6 +264,15 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  *   modules        4331 -> 4332   (+1)
  *   local modules   989 ->  990   (+1)
  *
+ * Then #18790 (`0677271709`) taught the agent icon table a new agent, and its icon
+ * `src/shared/agent-icons/freebuff.png` entered through `mobile-agent-icon-assets.ts`, which the
+ * session page reaches as it reaches every other icon there. An image asset, not a package, and
+ * the one line that differs between the closure at `226f4a0775` and at `059ee59a48`; it landed
+ * between #22114's measurement and its merge, so main read one short.
+ *
+ *   modules        4332 -> 4333   (+1)
+ *   local modules   990 ->  991   (+1)
+ *
  * C7.10 item C then put the whole of that directory on the page, and the merge of the two is
  * measured rather than summed — which is what this reading keeps having to do. The arithmetic of
  * 4,358 on this branch and 4,332 on main double-counts `markdown-table-rows.ts`: main reached it
@@ -278,12 +287,11 @@ const MERMAID_PACKAGE = 'node_modules/mermaid/'
  * already gone from both. 26 rather than 27 for exactly that reason — main reached the row splitter
  * first, so it is not this branch's to add twice.
  *
- * The 4,333 the merge is measured against is not the 4,332 main pins. Main's own census fails at
- * `059ee59a48`, `expected [ …(4333) ] to have a length of 4332`, because a second module joined
- * beside the row splitter and was not counted: `src/shared/agent-icons/freebuff.png`, an image the
- * icon set gained. Measured by diffing main's local list at `55378fce5b` against `059ee59a48`, which
- * names both. The pin below is this merge's measurement rather than main's arithmetic, and it is
- * green here; the -1 on main is main's to correct.
+ * The 4,333 the merge is measured against is main's corrected reading, not the 4,332 it pinned at
+ * `059ee59a48`: that census failed, `expected [ …(4333) ] to have a length of 4332`, because the
+ * icon above joined beside the row splitter and was not counted. #22119 (`197550c952`) repinned
+ * main to 4,333 with the paragraph above, and folding it here moves nothing — the icon was already
+ * on both sides of the +26, so the pin below is this merge's own measurement, unchanged.
  */
 const SESSION_ROUTE_MODULES = 4359
 
